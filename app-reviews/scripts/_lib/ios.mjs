@@ -12,7 +12,7 @@ export async function fetchIosReviews({ appId, country, sort, limit }) {
       throw new Error(`Apple App Store reviews request failed with HTTP ${res.status}.`);
     }
     pages += 1;
-    const parsed = parseFeed(await res.json());
+    const parsed = parseXmlFeed(await res.text());
     if (parsed.length === 0) break;
     for (const review of parsed) {
       reviews.push(review);
@@ -24,52 +24,76 @@ export async function fetchIosReviews({ appId, country, sort, limit }) {
 
 function buildUrl({ appId, country, sort, page }) {
   const sortKey = sort === 'helpful' || sort === 'relevant' ? 'mosthelpful' : 'mostrecent';
-  return `https://itunes.apple.com/${encodeURIComponent(country)}/rss/customerreviews/page=${page}/id=${encodeURIComponent(appId)}/sortby=${sortKey}/json`;
+  return `https://itunes.apple.com/${encodeURIComponent(country)}/rss/customerreviews/page=${page}/id=${encodeURIComponent(appId)}/sortby=${sortKey}/xml`;
 }
 
-function parseFeed(source) {
-  const feed = objField(source, 'feed');
-  const entries = arrayOrSingle(objField(feed, 'entry'));
-  return entries
-    .map((entry) => normalizeEntry(entry))
-    .filter((review) => review.rating !== null && review.reviewId.length > 0);
+function parseXmlFeed(xml) {
+  const reviews = [];
+  const re = /<entry>([\s\S]*?)<\/entry>/g;
+  let m;
+  while ((m = re.exec(xml)) !== null) {
+    const review = normalizeXmlEntry(m[1]);
+    if (review.rating !== null && review.reviewId.length > 0) reviews.push(review);
+  }
+  return reviews;
 }
 
-function normalizeEntry(source) {
-  const reviewId = parseReviewId(labelAt(source, ['id'])) || stableFallback(source);
-  const reviewedAt = normalizeDate(labelAt(source, ['updated']));
-  const appVersion = labelAt(source, ['im:version']);
+function normalizeXmlEntry(xml) {
+  const reviewId = (xmlTag(xml, 'id') || stableFallback(xml)).trim();
+  const title = dexml(xmlTag(xml, 'title'));
+  const content = dexml(xmlTagTyped(xml, 'content', 'text'));
+  const rating = numOrNull(xmlTag(xml, 'im:rating'));
+  const helpfulCount = numOrNull(xmlTag(xml, 'im:voteSum'));
+  const helpfulTotal = numOrNull(xmlTag(xml, 'im:voteCount'));
+  const version = xmlTag(xml, 'im:version');
+  const updated = xmlTag(xml, 'updated');
+  const authorBlock = xml.match(/<author>([\s\S]*?)<\/author>/i)?.[1] ?? '';
   return {
     reviewId,
-    userName: labelAt(source, ['author', 'name']),
-    userUrl: labelAt(source, ['author', 'uri']),
+    userName: dexml(xmlTag(authorBlock, 'name')),
+    userUrl: xmlTag(authorBlock, 'uri'),
     userImage: null,
-    title: labelAt(source, ['title']),
-    content: labelAt(source, ['content']),
-    rating: numberOrNull(labelAt(source, ['im:rating'])),
-    helpfulCount: numberOrNull(labelAt(source, ['im:voteSum'])),
-    helpfulTotal: numberOrNull(labelAt(source, ['im:voteCount'])),
-    reviewCreatedVersion: appVersion,
-    appVersion,
-    reviewedAt,
+    title,
+    content,
+    rating,
+    helpfulCount,
+    helpfulTotal,
+    reviewCreatedVersion: version,
+    appVersion: version,
+    reviewedAt: updated ? new Date(updated).toISOString() : null,
     replyContent: null,
     repliedAt: null,
-    raw: source,
+    raw: { xml },
   };
 }
 
-function objField(s, k) { return (!s || typeof s !== 'object' || Array.isArray(s)) ? undefined : s[k]; }
-function arrayOrSingle(v) { return Array.isArray(v) ? v : (v == null ? [] : [v]); }
-function labelAt(s, p) {
-  let c = s;
-  for (const k of p) { c = objField(c, k); if (c == null) return null; }
-  if (typeof c === 'string') return c;
-  if (c && typeof c === 'object' && !Array.isArray(c)) {
-    return typeof c.label === 'string' ? c.label : null;
-  }
-  return null;
+function xmlTag(xml, tag) {
+  const m = xml.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+  return m ? m[1].trim() : null;
 }
-function parseReviewId(v) { if (!v) return ''; const t = v.trim(); const m = /\/id(\d+)(?:[/?#]|$)/.exec(t); return m ? m[1] : t; }
-function stableFallback(s) { return createHash('sha1').update(JSON.stringify(s)).digest('hex'); }
-function normalizeDate(v) { if (!v) return null; const t = Date.parse(v); return Number.isFinite(t) ? new Date(t).toISOString() : v; }
-function numberOrNull(v) { if (v === null) return null; const n = Number(v); return Number.isFinite(n) ? n : null; }
+
+function xmlTagTyped(xml, tag, type) {
+  const m = xml.match(new RegExp(`<${tag}\\s+type="${type}"[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+  return m ? m[1].trim() : null;
+}
+
+function dexml(s) {
+  if (!s) return s;
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#39;/g, "'");
+}
+
+function numOrNull(v) {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function stableFallback(s) {
+  return createHash('sha1').update(s).digest('hex');
+}
