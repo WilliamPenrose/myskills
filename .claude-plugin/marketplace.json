@@ -1,0 +1,14 @@
+{
+  "name": "myskills",
+  "owner": {
+    "name": "WilliamPenrose",
+    "email": "william.panrose@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "app-reviews",
+      "source": "./plugins/app-reviews",
+      "description": "Fetch and filter Google Play / Apple App Store reviews into JSON for direct LLM analysis."
+    }
+  ]
+}

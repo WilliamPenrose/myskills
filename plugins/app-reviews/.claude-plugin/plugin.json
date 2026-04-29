@@ -1,0 +1,9 @@
+{
+  "name": "app-reviews",
+  "version": "2026.4.29",
+  "description": "Fetch and filter Google Play / Apple App Store reviews into JSON for direct LLM analysis.",
+  "author": {
+    "name": "WilliamPenrose",
+    "email": "william.panrose@gmail.com"
+  }
+}
