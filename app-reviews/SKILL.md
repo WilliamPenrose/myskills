@@ -30,7 +30,7 @@ Skip this only if you are sure no HTTP/HTTPS proxy is needed in your environment
 
 Reviews and the product registry live in a project-local `.app-reviews/` directory:
 
-- `products.json` — registry mapping canonical names to app IDs
+- `products.json` — registry mapping canonical names to app IDs (user-curated)
 - `reviews.db` — SQLite, auto-created on first fetch
 - `.gitignore` — auto-written with `*` if the project is a git repo, so the dir is ignored
 
@@ -54,8 +54,7 @@ The first time you run `fetch` or `evaluate`, if `products.json` does not exist,
     "aliases": ["tt", "tipsyturbo"],
     "play": "com.tipsyturbo.app",
     "ios": "1234567890",
-    "default_country": "us",
-    "default_lang": "en"
+    "default_country": "us"
   }
 }
 ```
@@ -63,7 +62,7 @@ The first time you run `fetch` or `evaluate`, if `products.json` does not exist,
 - The top-level key is the **canonical name**. It is what the DB stores in `product_key`.
 - `aliases` are alternate names. Lookup is case-insensitive. Aliases can be in any language since this file is private to the user.
 - `play` and `ios` are the Google Play package name and Apple App Store numeric ID. Either may be omitted if the product is not on that platform.
-- `default_country` and `default_lang` are optional; default to `us` / `en`.
+- `default_country` is optional; defaults to `us`. There is intentionally no `default_lang`: Play requires `--lang` on every fetch (see Workflow), and iOS does not use a language parameter.
 
 A reference `products.example.json` ships in this skill's directory.
 
@@ -73,14 +72,30 @@ When the user asks you to analyze app reviews:
 
 1. **Resolve the colloquial name to a canonical product.** The scripts handle this for you, but if you want to inspect first, read the active `.app-reviews/products.json` (run any script with `--help` if you need a reminder of which directory it picks). **Never invent app IDs.** If the name doesn't resolve, ask the user; do not guess.
 
-2. **Fetch reviews.** Run one invocation per platform you want:
+2. **Resolve `(country, hl)` for Play before fetching.** Google Play's reviews endpoint filters by `hl` (host language), not `gl`. **Omitting `hl` returns a global English fallback set with no error — silently wrong data.** The fetch script therefore requires `--lang` for `--platform play` and will refuse to run without it.
+
+   Before calling fetch, derive `hl` from the target country yourself, using your general knowledge of which language is spoken there:
+
+   - tw → `zh-TW`, hk → `zh-HK`, jp → `ja`, kr → `ko`
+   - br → `pt-BR`, mx → `es-MX`, de → `de`, fr → `fr`, it → `it`
+   - us / au / sg → `en`
+
+   For multi-locale countries (CA, IN, CH, BE), ask the user which locale they want — do not pick a default. A wrong `hl` returns a misleading non-empty result, not an error.
+
+   For `--platform ios`, pass only `--country`. Apple's reviews endpoint ignores any language parameter; the script rejects `--lang` for ios as a usage error.
+
+   To check what data is already in the local DB for a given app+market before fetching, query `reviews.db` directly (e.g. `SELECT country, COUNT(*) FROM app_reviews WHERE product_key=? AND platform=? GROUP BY country`). There's no separate cache file — the DB is the source of truth.
+
+3. **Fetch reviews.** Run one invocation per platform you want:
    ```
-   node <skill_dir>/scripts/fetch.mjs --product <canonical> --platform play --limit 1000
-   node <skill_dir>/scripts/fetch.mjs --product <canonical> --platform ios --limit 500
+   node <skill_dir>/scripts/fetch.mjs --product <canonical> --platform play --country tw --lang zh-TW --limit 1000
+   node <skill_dir>/scripts/fetch.mjs --product <canonical> --platform ios  --country tw --limit 100
    ```
    Read stderr for progress (the first line prints the resolved data dir); stdout is silent on success.
 
-3. **Evaluate and read the JSON.** Run:
+   **iOS soft cap:** the iOS fetcher refuses `--limit > 100` unless `--force` is passed. Apple's reviews API is heavily rate-limited; pulling more than ~100 in one country routinely triggers minutes of 429 backoffs and often still fails. Default to `--limit 100` for iOS — the most recent reviews are usually enough to surface the dominant complaints. If you genuinely need more (e.g. user explicitly asks for an exhaustive pull, or 100 isn't surfacing what you need), tell the user it'll be slow and add `--force`.
+
+4. **Evaluate and read the JSON.** Run:
    ```
    node <skill_dir>/scripts/evaluate.mjs --product <canonical>
    ```
@@ -97,7 +112,7 @@ Each element of the array:
 | `review_key` | string | Unique key `<platform>:<app_id>:<country>:<review_id>` |
 | `platform` | `"play"` or `"ios"` | |
 | `country` | string | Lowercase 2-letter code |
-| `lang` | string | Lowercase, only meaningful for Play |
+| `lang` | string | Lowercase. Set on Play rows (e.g. `zh-tw`); empty string on iOS rows, since Apple's endpoint does not filter by language. |
 | `rating` | int 1-5 or null | |
 | `title` | string or null | iOS reviews have titles; Play reviews don't |
 | `content` | string or null | The body |

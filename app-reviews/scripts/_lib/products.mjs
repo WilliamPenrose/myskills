@@ -43,13 +43,15 @@ export function loadProducts(dataDir) {
   for (const [key, value] of Object.entries(parsed)) {
     if (key.startsWith('_')) continue;
     if (!value || typeof value !== 'object') continue;
+    // Note: a `default_lang` field on legacy product entries is silently
+    // ignored. The fetch script no longer uses a per-product lang default;
+    // Play requires explicit --lang, iOS does not use lang at all.
     out[key] = {
       canonical: key,
       aliases: Array.isArray(value.aliases) ? value.aliases.map((a) => String(a)) : [],
       play: typeof value.play === 'string' ? value.play : null,
       ios: value.ios !== undefined && value.ios !== null ? String(value.ios) : null,
       default_country: typeof value.default_country === 'string' ? value.default_country.toLowerCase() : 'us',
-      default_lang: typeof value.default_lang === 'string' ? value.default_lang.toLowerCase() : 'en',
     };
   }
   return out;

@@ -80,8 +80,11 @@ export async function fetchIosReviews({ appId, country, sort, limit }) {
 }
 
 function buildUrl({ appId, country, offset, apiSort, pageSize }) {
+  // Note: this endpoint accepts an `l` parameter (BCP 47 language tag) but
+  // does not use it for review filtering — payloads are byte-identical
+  // across `l=en-US`, `l=zh-TW`, `l=ja`, and omission. Verified empirically
+  // 2026-04. We omit it.
   const params = new URLSearchParams({
-    l: 'en-US',
     platform: 'web',
     limit: String(pageSize),
     offset: String(offset),

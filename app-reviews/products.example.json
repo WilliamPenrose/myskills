@@ -5,7 +5,6 @@
     "aliases": ["my-app", "ma"],
     "play": "com.example.myapp",
     "ios": "1234567890",
-    "default_country": "us",
-    "default_lang": "en"
+    "default_country": "us"
   }
 }

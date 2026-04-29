@@ -15,10 +15,24 @@ Required:
 
 Optional:
   --country <code>      override product's default_country
-  --lang <code>         Play only; ignored for iOS
+  --lang <code>         REQUIRED for --platform play; REJECTED for --platform ios
   --sort <newest|relevant|rating>   default: newest
   --limit <n>           default: 100
+  --force               required to exceed the iOS soft cap (100)
   --data-dir <path>     override data directory (default: project-local .app-reviews/)
+
+Notes on --lang:
+  Google Play's reviews endpoint filters reviews by hl, not gl. Omitting hl
+  silently returns a global English fallback set, which is data your agent
+  almost never wants. Therefore --lang is required for play; the script will
+  not guess. Apple's reviews endpoint ignores the language parameter, so
+  passing --lang for ios is treated as a usage error.
+
+Notes on iOS rate limits:
+  iOS pulls are aggressively rate-limited (HTTP 429) by Apple's per-page-size-10
+  catalog API. Pulling >100 for one country routinely costs many minutes of
+  exponential-backoff. To prevent agents from burning that time silently, iOS
+  fetches >100 require --force.
 
 Data directory resolution order:
   1) --data-dir flag
@@ -40,6 +54,7 @@ function parseArgs(argv) {
     if (a === '--sort')      { args.sort = argv[++i]; continue; }
     if (a === '--limit')     { args.limit = parseInt(argv[++i], 10); continue; }
     if (a === '--data-dir')  { args.dataDir = argv[++i]; continue; }
+    if (a === '--force')     { args.force = true; continue; }
     throw new Error(`unknown argument: ${a}`);
   }
   return args;
@@ -65,6 +80,39 @@ async function main() {
   if (!Number.isInteger(args.limit) || args.limit < 1) {
     console.error('--limit must be a positive integer'); process.exit(1);
   }
+  if (args.platform === 'play' && !args.lang) {
+    console.error(
+      '--platform play requires --lang.\n' +
+      'Pass the dominant language for the target country, e.g.:\n' +
+      '  country=tw -> --lang zh-TW\n' +
+      '  country=jp -> --lang ja\n' +
+      '  country=br -> --lang pt-BR\n' +
+      "Note: Google Play's reviews endpoint filters by hl, not gl.\n" +
+      'Without --lang you would silently get a global English fallback set.',
+    );
+    process.exit(1);
+  }
+  if (args.platform === 'ios' && args.lang) {
+    console.error(
+      '--platform ios does not accept --lang.\n' +
+      "Apple's reviews endpoint ignores the language parameter; passing it\n" +
+      'suggests a misunderstanding of the API. Pass only --country for ios.',
+    );
+    process.exit(1);
+  }
+  const IOS_SOFT_CAP = 100;
+  if (args.platform === 'ios' && args.limit > IOS_SOFT_CAP && !args.force) {
+    console.error(
+      `iOS --limit ${args.limit} exceeds the soft cap of ${IOS_SOFT_CAP}.\n` +
+      `Apple's reviews API is heavily rate-limited (page size is 10, and 429s\n` +
+      `kick in quickly under burst load). Pulling >${IOS_SOFT_CAP} reviews for one\n` +
+      `country routinely costs many minutes of exponential backoff and often\n` +
+      `still fails. Try --limit ${IOS_SOFT_CAP} (recent reviews are usually enough\n` +
+      `to surface the dominant complaints), or pass --force to override if you\n` +
+      `truly need a deeper pull and accept the wait.`,
+    );
+    process.exit(1);
+  }
 
   const dataDir = resolveDataDir({ flagValue: args.dataDir });
   console.error(`data dir: ${dataDir}`);
@@ -88,7 +136,12 @@ async function main() {
     process.exit(1);
   }
   const country = (args.country ?? product.default_country).toLowerCase();
-  const lang = (args.lang ?? product.default_lang).toLowerCase();
+  // For iOS, the language parameter is not meaningful (Apple's endpoint
+  // ignores it). We store '' rather than 'en' to avoid the misleading
+  // implication that iOS rows are English-only when in fact they are in
+  // whatever language the user wrote. Empty string keeps the existing
+  // NOT NULL schema constraint without requiring a migration.
+  const lang = args.platform === 'play' ? args.lang.toLowerCase() : '';
 
   const dbPath = resolveDbPath(dataDir);
   const db = openDb(dbPath);
