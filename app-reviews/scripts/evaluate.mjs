@@ -4,7 +4,7 @@ import {
   resolveDbPath, openDb, selectReviewsForEvaluate,
   clearFeaturesPassed, upsertFeature,
 } from './_lib/db.mjs';
-import { resolveProduct, bootstrapIfMissing, getProductsPath } from './_lib/products.mjs';
+import { resolveProduct, bootstrapIfMissing, getProductsPath, resolveDataDir } from './_lib/products.mjs';
 import {
   computeSignalFlags, signalNamesFromFlags, countWords, analysisValueScore,
 } from './_lib/signals.mjs';
@@ -20,7 +20,7 @@ Optional:
   --top <n>                    selection limit, default: 300
   --long-chars <n>             long_review threshold, default: 120
   --signal-chars <n>           signal_review threshold, default: 80
-  --db <path>                  override default DB path
+  --data-dir <path>            override data directory (default: project-local .app-reviews/)
 `.trim();
 
 function parseArgs(argv) {
@@ -33,7 +33,7 @@ function parseArgs(argv) {
     if (a === '--top')          { args.top = parseInt(argv[++i], 10); continue; }
     if (a === '--long-chars')   { args.longChars = parseInt(argv[++i], 10); continue; }
     if (a === '--signal-chars') { args.signalChars = parseInt(argv[++i], 10); continue; }
-    if (a === '--db')           { args.db = argv[++i]; continue; }
+    if (a === '--data-dir')     { args.dataDir = argv[++i]; continue; }
     throw new Error(`unknown argument: ${a}`);
   }
   return args;
@@ -102,20 +102,23 @@ async function main() {
     console.error('--platform must be one of play|ios|both'); process.exit(1);
   }
 
-  if (bootstrapIfMissing()) {
-    console.error(`created empty products.json at ${getProductsPath()}, fill in your products first`);
+  const dataDir = resolveDataDir({ flagValue: args.dataDir });
+  console.error(`data dir: ${dataDir}`);
+
+  if (bootstrapIfMissing(dataDir)) {
+    console.error(`created empty products.json at ${getProductsPath(dataDir)}, fill in your products first`);
     process.exit(1);
   }
 
   let product;
   try {
-    product = resolveProduct(args.product);
+    product = resolveProduct(dataDir, args.product);
   } catch (e) {
     console.error(e.message);
     process.exit(1);
   }
 
-  const dbPath = resolveDbPath(args.db);
+  const dbPath = resolveDbPath(dataDir);
   const db = openDb(dbPath);
   const reviews = selectReviewsForEvaluate(db, product.canonical, args.platform);
 

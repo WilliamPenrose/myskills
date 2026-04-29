@@ -1,7 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS app_reviews (
@@ -74,10 +73,9 @@ CREATE INDEX IF NOT EXISTS idx_app_review_features_product_passed
   ON app_review_features(product_key, platform, passed, analysis_value_score);
 `;
 
-export function resolveDbPath(flagValue) {
-  if (flagValue) return path.resolve(flagValue);
+export function resolveDbPath(dataDir) {
   if (process.env.APP_REVIEWS_DB) return path.resolve(process.env.APP_REVIEWS_DB);
-  return path.join(os.homedir(), '.claude', 'data', 'app-reviews', 'reviews.db');
+  return path.join(dataDir, 'reviews.db');
 }
 
 export function openDb(dbPath) {

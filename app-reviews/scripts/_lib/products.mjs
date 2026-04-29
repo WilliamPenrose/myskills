@@ -1,39 +1,42 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { resolveDataDir, ensureDataDir } from './paths.mjs';
 
-const DATA_DIR = path.join(os.homedir(), '.claude', 'data', 'app-reviews');
-const PRODUCTS_PATH = path.join(DATA_DIR, 'products.json');
+const PRODUCTS_FILENAME = 'products.json';
 
-const EMPTY_TEMPLATE = {
-  _comment: 'Add your products below. Top-level keys (other than _comment) are canonical product names. Aliases are matched case-insensitively. Either play or ios may be omitted.',
-  myapp: {
-    aliases: ['my-app', 'ma'],
-    play: 'com.example.myapp',
-    ios: '1234567890',
-    default_country: 'us',
-    default_lang: 'en',
-  },
-};
+const SKILL_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const EXAMPLE_PATH = path.join(SKILL_DIR, 'products.example.json');
 
-export function getProductsPath() {
-  return PRODUCTS_PATH;
+export function getProductsPath(dataDir) {
+  return path.join(dataDir, PRODUCTS_FILENAME);
 }
 
-export function bootstrapIfMissing() {
-  if (fs.existsSync(PRODUCTS_PATH)) return false;
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(PRODUCTS_PATH, JSON.stringify(EMPTY_TEMPLATE, null, 2) + '\n', 'utf8');
+export function bootstrapIfMissing(dataDir) {
+  const productsPath = getProductsPath(dataDir);
+  if (fs.existsSync(productsPath)) return false;
+  ensureDataDir(dataDir);
+  let template;
+  try {
+    template = fs.readFileSync(EXAMPLE_PATH, 'utf8');
+  } catch {
+    template = JSON.stringify({
+      _comment: 'Add your products below. Top-level keys (other than _comment) are canonical product names. Either play or ios may be omitted.',
+      myapp: { aliases: ['my-app'], play: 'com.example.myapp', ios: '1234567890', default_country: 'us', default_lang: 'en' },
+    }, null, 2) + '\n';
+  }
+  fs.writeFileSync(productsPath, template, 'utf8');
   return true;
 }
 
-export function loadProducts() {
-  const text = fs.readFileSync(PRODUCTS_PATH, 'utf8');
+export function loadProducts(dataDir) {
+  const productsPath = getProductsPath(dataDir);
+  const text = fs.readFileSync(productsPath, 'utf8');
   let parsed;
   try {
     parsed = JSON.parse(text);
   } catch (e) {
-    throw new Error(`failed to parse ${PRODUCTS_PATH}: ${e.message}`);
+    throw new Error(`failed to parse ${productsPath}: ${e.message}`);
   }
   if (!parsed || typeof parsed !== 'object') return {};
   const out = {};
@@ -63,10 +66,11 @@ export function buildLookup(products) {
   return map;
 }
 
-export function resolveProduct(name) {
-  const products = loadProducts();
+export function resolveProduct(dataDir, name) {
+  const products = loadProducts(dataDir);
+  const productsPath = getProductsPath(dataDir);
   if (Object.keys(products).length === 0) {
-    throw new Error(`products.json is empty at ${PRODUCTS_PATH}. Add your products before running fetch/evaluate.`);
+    throw new Error(`products.json is empty at ${productsPath}. Add your products before running fetch/evaluate.`);
   }
   const lookup = buildLookup(products);
   const canonical = lookup.get(String(name).toLowerCase());
@@ -78,3 +82,5 @@ export function resolveProduct(name) {
   }
   return products[canonical];
 }
+
+export { resolveDataDir };

@@ -26,12 +26,23 @@ cd <skill_dir> && npm install --omit=dev
 
 Skip this only if you are sure no HTTP/HTTPS proxy is needed in your environment — the import will fail otherwise.
 
-## First-time setup
+## Where data lives
 
-Reviews and product registry live in `~/.claude/data/app-reviews/`:
+Reviews and the product registry live in a project-local `.app-reviews/` directory:
 
 - `products.json` — registry mapping canonical names to app IDs
 - `reviews.db` — SQLite, auto-created on first fetch
+- `.gitignore` — auto-written with `*` if the project is a git repo, so the dir is ignored
+
+The data directory is resolved in this order:
+
+1. `--data-dir <path>` CLI flag
+2. `APP_REVIEWS_DATA_DIR` env var
+3. The nearest existing `.app-reviews/` directory walking up from CWD
+4. `<git_root>/.app-reviews/` if CWD is inside a git repo
+5. `<CWD>/.app-reviews/` as a last resort
+
+Run from a project root (or a subdirectory of one) and the data lands in that project. To share a registry across projects, set `APP_REVIEWS_DATA_DIR=~/.claude/data/app-reviews` (or anywhere else) in your shell profile.
 
 The first time you run `fetch` or `evaluate`, if `products.json` does not exist, the script creates an empty template and exits 1 with a message. The user must populate it before the skill can do anything useful.
 
@@ -60,14 +71,14 @@ A reference `products.example.json` ships in this skill's directory.
 
 When the user asks you to analyze app reviews:
 
-1. **Resolve the colloquial name to a canonical product.** Read `~/.claude/data/app-reviews/products.json`. Find the product whose canonical name or aliases match what the user said. **Never invent app IDs.** If no match, ask the user; do not guess.
+1. **Resolve the colloquial name to a canonical product.** The scripts handle this for you, but if you want to inspect first, read the active `.app-reviews/products.json` (run any script with `--help` if you need a reminder of which directory it picks). **Never invent app IDs.** If the name doesn't resolve, ask the user; do not guess.
 
 2. **Fetch reviews.** Run one invocation per platform you want:
    ```
    node <skill_dir>/scripts/fetch.mjs --product <canonical> --platform play --limit 1000
    node <skill_dir>/scripts/fetch.mjs --product <canonical> --platform ios --limit 500
    ```
-   Read stderr for progress; stdout is silent on success.
+   Read stderr for progress (the first line prints the resolved data dir); stdout is silent on success.
 
 3. **Evaluate and read the JSON.** Run:
    ```
@@ -75,7 +86,7 @@ When the user asks you to analyze app reviews:
    ```
    Stdout is a JSON array of high-signal reviews. Parse it and analyze.
 
-`<skill_dir>` is the directory containing this SKILL.md. While developing inside x-growth, that's `.claude/skills/app-reviews`. Once promoted, it's `~/.claude/skills/app-reviews`.
+`<skill_dir>` is the directory containing this SKILL.md.
 
 ## evaluate JSON output schema
 
@@ -101,7 +112,7 @@ Use `signals` to bucket complaints by topic. Use `score` to prioritize when ther
 
 ## Adding a new alias
 
-If the user refers to an existing product by a name not in the registry (e.g. they said "the drinking app" and you figured out they meant `tipsy`), edit `~/.claude/data/app-reviews/products.json` and append to the relevant `aliases` array. **Edit the user's data file — never edit the skill's `products.example.json`.**
+If the user refers to an existing product by a name not in the registry (e.g. they said "the drinking app" and you figured out they meant `tipsy`), edit the active `.app-reviews/products.json` and append to the relevant `aliases` array. **Edit the user's data file — never edit the skill's `products.example.json`.**
 
 ## Error handling
 
@@ -122,4 +133,4 @@ If the user refers to an existing product by a name not in the registry (e.g. th
 - **Do not re-run `evaluate` with different `--top` values to "get more".** Set `--top` once. The selection is deterministic given the inputs.
 - **Do not analyze the raw `app_reviews` table directly.** Always go through `evaluate` so noise is filtered. (If you really need raw data for a specific deep-dive, fine, but the default path is evaluate-then-analyze.)
 - **Do not auto-retry on `PlayGatewayError`.** Retries trigger more aggressive rate-limiting. Wait.
-- **Do not commit `~/.claude/data/app-reviews/` to any repo.** It's user-private state.
+- **Do not commit `.app-reviews/` to any repo.** It's user-private state. The skill auto-writes a `.gitignore` inside the directory when it detects a git repo, but verify before committing.

@@ -3,7 +3,7 @@ import './_lib/silence-warnings.mjs';
 import './_lib/proxy.mjs';
 import { fetchPlayReviews } from './_lib/play.mjs';
 import { fetchIosReviews } from './_lib/ios.mjs';
-import { resolveProduct, bootstrapIfMissing, getProductsPath } from './_lib/products.mjs';
+import { resolveProduct, bootstrapIfMissing, getProductsPath, resolveDataDir } from './_lib/products.mjs';
 import { resolveDbPath, openDb, appReviewKey, countReviews, upsertReview } from './_lib/db.mjs';
 
 const HELP = `
@@ -18,7 +18,14 @@ Optional:
   --lang <code>         Play only; ignored for iOS
   --sort <newest|relevant|rating>   default: newest
   --limit <n>           default: 1000 (iOS hard-capped near 500 by Apple RSS)
-  --db <path>           override default DB path
+  --data-dir <path>     override data directory (default: project-local .app-reviews/)
+
+Data directory resolution order:
+  1) --data-dir flag
+  2) APP_REVIEWS_DATA_DIR env var
+  3) nearest existing .app-reviews/ walking up from CWD
+  4) <git-root>/.app-reviews/ if CWD is in a git repo
+  5) <CWD>/.app-reviews/
 `.trim();
 
 function parseArgs(argv) {
@@ -32,7 +39,7 @@ function parseArgs(argv) {
     if (a === '--lang')      { args.lang = argv[++i]; continue; }
     if (a === '--sort')      { args.sort = argv[++i]; continue; }
     if (a === '--limit')     { args.limit = parseInt(argv[++i], 10); continue; }
-    if (a === '--db')        { args.db = argv[++i]; continue; }
+    if (a === '--data-dir')  { args.dataDir = argv[++i]; continue; }
     throw new Error(`unknown argument: ${a}`);
   }
   return args;
@@ -59,14 +66,17 @@ async function main() {
     console.error('--limit must be a positive integer'); process.exit(1);
   }
 
-  if (bootstrapIfMissing()) {
-    console.error(`created empty products.json at ${getProductsPath()}, fill in your products before running fetch`);
+  const dataDir = resolveDataDir({ flagValue: args.dataDir });
+  console.error(`data dir: ${dataDir}`);
+
+  if (bootstrapIfMissing(dataDir)) {
+    console.error(`created empty products.json at ${getProductsPath(dataDir)}, fill in your products before running fetch`);
     process.exit(1);
   }
 
   let product;
   try {
-    product = resolveProduct(args.product);
+    product = resolveProduct(dataDir, args.product);
   } catch (e) {
     console.error(e.message);
     process.exit(1);
@@ -84,7 +94,7 @@ async function main() {
     console.error("note: Apple RSS feed caps reviews at ~500 per country; will fetch what's available");
   }
 
-  const dbPath = resolveDbPath(args.db);
+  const dbPath = resolveDbPath(dataDir);
   const db = openDb(dbPath);
   const before = countReviews(db, product.canonical);
   const fetchedAt = new Date().toISOString();

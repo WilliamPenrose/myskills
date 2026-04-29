@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy this file to ~/.claude/data/app-reviews/products.json and edit. Each top-level key (other than '_comment') is the canonical product name (also used as DB product_key). 'aliases' is a list of alternative names, matched case-insensitively. They can be in any language since this file is private. Either 'play' or 'ios' may be omitted if the product is not on that platform.",
+  "_comment": "This is the template. The skill auto-creates a copy at <data_dir>/products.json on first run (default: project-local .app-reviews/). Each top-level key (other than '_comment') is the canonical product name (also used as DB product_key). 'aliases' is a list of alternative names, matched case-insensitively. They can be in any language since this file is private. Either 'play' or 'ios' may be omitted if the product is not on that platform.",
 
   "myapp": {
     "aliases": ["my-app", "ma"],
