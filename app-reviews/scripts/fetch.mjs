@@ -17,7 +17,7 @@ Optional:
   --country <code>      override product's default_country
   --lang <code>         Play only; ignored for iOS
   --sort <newest|relevant|rating>   default: newest
-  --limit <n>           default: 1000 (iOS hard-capped near 500 by Apple RSS)
+  --limit <n>           default: 100
   --data-dir <path>     override data directory (default: project-local .app-reviews/)
 
 Data directory resolution order:
@@ -29,7 +29,7 @@ Data directory resolution order:
 `.trim();
 
 function parseArgs(argv) {
-  const args = { sort: 'newest', limit: 1000 };
+  const args = { sort: 'newest', limit: 100 };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--help' || a === '-h') { args.help = true; continue; }
@@ -89,10 +89,6 @@ async function main() {
   }
   const country = (args.country ?? product.default_country).toLowerCase();
   const lang = (args.lang ?? product.default_lang).toLowerCase();
-
-  if (args.platform === 'ios' && args.limit > 500) {
-    console.error("note: Apple RSS feed caps reviews at ~500 per country; will fetch what's available");
-  }
 
   const dbPath = resolveDbPath(dataDir);
   const db = openDb(dbPath);
