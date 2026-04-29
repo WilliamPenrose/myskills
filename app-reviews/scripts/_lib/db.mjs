@@ -81,6 +81,8 @@ export function resolveDbPath(dataDir) {
 export function openDb(dbPath) {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
+  db.exec('PRAGMA journal_mode = WAL');
+  db.exec('PRAGMA busy_timeout = 10000');
   db.exec(SCHEMA_SQL);
   return db;
 }
@@ -89,7 +91,11 @@ export function appReviewKey({ platform, app_id, country, review_id }) {
   return `${platform}:${app_id}:${country}:${review_id}`;
 }
 
-export function countReviews(db, productKey) {
+export function countReviews(db, productKey, platform) {
+  if (platform) {
+    const row = db.prepare('SELECT COUNT(*) AS c FROM app_reviews WHERE product_key = ? AND platform = ?').get(productKey, platform);
+    return Number(row.c);
+  }
   const row = db.prepare('SELECT COUNT(*) AS c FROM app_reviews WHERE product_key = ?').get(productKey);
   return Number(row.c);
 }

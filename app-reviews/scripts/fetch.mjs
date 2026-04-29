@@ -96,7 +96,7 @@ async function main() {
 
   const dbPath = resolveDbPath(dataDir);
   const db = openDb(dbPath);
-  const before = countReviews(db, product.canonical);
+  const before = countReviews(db, product.canonical, args.platform);
   const fetchedAt = new Date().toISOString();
 
   console.error(`fetch ${product.canonical}/${args.platform} country=${country} sort=${args.sort} limit=${args.limit}`);
@@ -143,7 +143,7 @@ async function main() {
     upsertReview(db, row);
   }
 
-  const after = countReviews(db, product.canonical);
+  const after = countReviews(db, product.canonical, args.platform);
   const newCount = after - before;
   const updatedCount = result.reviews.length - newCount;
 
