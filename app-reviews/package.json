@@ -1,0 +1,13 @@
+{
+  "name": "claude-skill-app-reviews",
+  "version": "0.1.0",
+  "description": "Claude Code skill: fetch and filter Google Play / Apple App Store reviews into SQLite.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "undici": "^6.21.0"
+  }
+}

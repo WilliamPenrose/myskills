@@ -1,0 +1,11 @@
+{
+  "_comment": "Copy this file to ~/.claude/data/app-reviews/products.json and edit. Each top-level key (other than '_comment') is the canonical product name (also used as DB product_key). 'aliases' is a list of alternative names, matched case-insensitively. They can be in any language since this file is private. Either 'play' or 'ios' may be omitted if the product is not on that platform.",
+
+  "myapp": {
+    "aliases": ["my-app", "ma"],
+    "play": "com.example.myapp",
+    "ios": "1234567890",
+    "default_country": "us",
+    "default_lang": "en"
+  }
+}
