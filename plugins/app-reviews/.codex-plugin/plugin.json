@@ -1,0 +1,24 @@
+{
+  "name": "app-reviews",
+  "version": "2026.4.29",
+  "description": "Fetch and filter Google Play / Apple App Store reviews into JSON for direct LLM analysis.",
+  "author": {
+    "name": "WilliamPenrose",
+    "email": "william.panrose@gmail.com"
+  },
+  "repository": "https://github.com/WilliamPenrose/myskills",
+  "license": "MIT",
+  "keywords": [
+    "app-store",
+    "google-play",
+    "reviews",
+    "feedback",
+    "mobile"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "App Reviews",
+    "shortDescription": "Pull Play Store / App Store reviews and filter to high-signal feedback.",
+    "category": "Coding"
+  }
+}
