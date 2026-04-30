@@ -22,7 +22,7 @@ export function bootstrapIfMissing(dataDir) {
   } catch {
     template = JSON.stringify({
       _comment: 'Add your products below. Top-level keys (other than _comment) are canonical product names. Either play or ios may be omitted.',
-      myapp: { aliases: ['my-app'], play: 'com.example.myapp', ios: '1234567890', default_country: 'us', default_lang: 'en' },
+      myapp: { aliases: ['my-app'], play: 'com.example.myapp', ios: '1234567890', default_country: 'us' },
     }, null, 2) + '\n';
   }
   fs.writeFileSync(productsPath, template, 'utf8');
