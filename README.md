@@ -17,20 +17,18 @@ A marketplace of agent skills for **Claude Code** and **Codex**.
 
 After install, some skills require a one-time `npm install` inside the skill directory (see the skill's own `SKILL.md` — `app-reviews` does).
 
-## Install — Codex
+## Install — any other agent (Codex / Cursor / Windsurf / Gemini CLI / ...)
 
-Codex uses the community [`codex-plugin`](https://github.com/callstackincubator/agent-skills/tree/main/packages/codex-plugin) CLI:
-
-```
-npx codex-plugin add WilliamPenrose/myskills
-```
-
-## Install — any other agent
-
-[`vercel-labs/skills`](https://github.com/vercel-labs/skills) is a cross-agent CLI that auto-detects whichever coding agent you have installed (Cursor, Windsurf, Gemini CLI, OpenHands, and ~50 others) and installs the skill there:
+[`vercel-labs/skills`](https://github.com/vercel-labs/skills) is a cross-agent CLI that auto-detects whichever coding agent you have installed (~50 supported, including Codex) and installs the skill there:
 
 ```
 npx skills add WilliamPenrose/myskills
+```
+
+To target a specific agent or skill non-interactively:
+
+```
+npx skills add WilliamPenrose/myskills -a codex --skill app-reviews
 ```
 
 ## License
