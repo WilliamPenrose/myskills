@@ -17,19 +17,17 @@ A marketplace of agent skills for **Claude Code** and **Codex**.
 
 After install, some skills require a one-time `npm install` inside the skill directory (see the skill's own `SKILL.md` — `app-reviews` does).
 
-## Install — any other agent (Codex / Cursor / Windsurf / Gemini CLI / ...)
-
-[`vercel-labs/skills`](https://github.com/vercel-labs/skills) is a cross-agent CLI that auto-detects whichever coding agent you have installed (~50 supported, including Codex) and installs the skill there:
+## Install — other agents
 
 ```
-npx skills add WilliamPenrose/myskills
+npx skills add WilliamPenrose/myskills -a codex            # OpenAI Codex
+npx skills add WilliamPenrose/myskills -a cursor           # Cursor
+npx skills add WilliamPenrose/myskills -a windsurf         # Windsurf
+npx skills add WilliamPenrose/myskills -a gemini-cli       # Gemini CLI
+npx skills add WilliamPenrose/myskills -a github-copilot   # GitHub Copilot
 ```
 
-To target a specific agent or skill non-interactively:
-
-```
-npx skills add WilliamPenrose/myskills -a codex --skill app-reviews
-```
+For [other agents](https://github.com/vercel-labs/skills#supported-agents), substitute `-a <agent>`.
 
 ## License
 
