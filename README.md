@@ -25,6 +25,14 @@ Codex uses the community [`codex-plugin`](https://github.com/callstackincubator/
 npx codex-plugin add WilliamPenrose/myskills
 ```
 
+## Install — any other agent
+
+[`vercel-labs/skills`](https://github.com/vercel-labs/skills) is a cross-agent CLI that auto-detects whichever coding agent you have installed (Cursor, Windsurf, Gemini CLI, OpenHands, and ~50 others) and installs the skill there:
+
+```
+npx skills add WilliamPenrose/myskills
+```
+
 ## License
 
 [MIT](LICENSE)
