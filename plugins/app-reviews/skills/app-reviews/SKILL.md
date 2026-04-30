@@ -103,25 +103,11 @@ When the user asks you to analyze app reviews:
 
 `<skill_dir>` is the directory containing this SKILL.md.
 
-## evaluate selection strategy
+## evaluate output
 
-Two layers, intentionally separated:
+Reviews are first filtered by a junk floor (drops near-empty reviews like single emojis or one-word ratings — controlled by `--min-bytes`, default 15), then ranked by a language-neutral score that favors substantive text, helpful_count, negative ratings, dev replies, and recency. Top `--top` (default 300) are emitted. See `_lib/signals.mjs` for the exact formula.
 
-**Floor (junk gate, language-neutral):** drop reviews whose `meaningful_bytes < --min-bytes` (default 15). `meaningful_bytes` is the UTF-8 byte length of the review after stripping every non-letter character (`\p{L}`). This filters single-emoji reviews, "good"/"垃圾" one-word reviews, pure invite codes, etc., without bias against any language. ASCII chars are 1 byte each, CJK chars are 3 bytes each in UTF-8 — so 15 bytes ≈ 5 ASCII letters or 5 CJK chars, roughly equivalent in information content.
-
-**Score (ranking, language-neutral):**
-```
-log(1 + meaningful_bytes)
-+ log(1 + helpful_count)
-+ (rating <= 2 ? 1.0 : rating <= 3 ? 0.3 : 0)
-+ (reply_content present ? 0.5 : 0)
-+ exp(-age_days / 180)
-```
-The recency term has a 180-day characteristic time: today → +1.0, 90 days → +0.61, 180 days → +0.37, 365 days → +0.13. For a fast-iterating product this pushes feedback about old versions out of the top by default — a 1-year-old review needs strong helpful_count + low rating to compete with a recent one.
-
-**Optional hard cutoff:** `--since YYYY-MM-DD` drops reviews dated before that day. Use it when you know a release date and only want feedback that reflects the current build.
-
-After scoring, the top `--top` reviews (default 300) are emitted.
+`--since YYYY-MM-DD` is a hard cutoff applied before ranking — use it when you know a release date and only want feedback on the current build.
 
 **JSON output schema** — each element of the array:
 
@@ -155,9 +141,20 @@ If the user refers to an existing product by a name not in the registry (e.g. th
 | `unknown product "X". Known products: ...` | Name didn't match | Pick from the listed products, or ask the user |
 | `product "X" has no <play\|ios> app id configured` | Platform not configured | Skip that platform or ask the user to add it |
 | `Google Play rejected the reviews request with PlayGatewayError` | Google rate-limited or blocked | **Do not retry.** Report to the user; suggest waiting |
-| `Apple App Store reviews request failed with HTTP <status>` | Apple RSS error | Report to the user; rare |
-| `note: Apple RSS feed caps reviews at ~500 per country` | Just informational | Ignore; iOS limit is hard |
-| iOS fetch reports `0 fetched` | Apple's RSS customerreviews feed has been progressively deprecated and frequently returns empty feeds for many apps and countries — even popular ones. **This is not a bug in the skill.** Try a different country, or accept that iOS reviews may not be retrievable for this app/region right now. | Tell the user; do not retry |
+| `Apple App Store reviews request failed with HTTP <status>` | Apple endpoint returned non-2xx (rare outside 429) | Report to the user |
+| `Apple App Store reviews request failed: 429 retries exhausted` | Apple rate-limited beyond the script's backoff budget | **Do not retry immediately.** Wait, or try a different country |
+
+## When the upstream API drifts
+
+Both Play and Apple endpoints are reverse-engineered. They occasionally change shape without notice.
+
+If you see any of these, read `references/repairing-scrapers.md` before assuming a skill bug:
+
+- A fetch error ending with `See references/repairing-scrapers.md`
+- `health:` summary in fetch's stderr showing a key field at near-zero non-null count (e.g. `content=0/100` after a non-trivial fetch)
+- evaluate output that looks structurally wrong (e.g. rating all null, content mostly empty)
+
+You diagnose and propose a unified diff; you do not apply it. The user applies.
 
 ## What NOT to do
 

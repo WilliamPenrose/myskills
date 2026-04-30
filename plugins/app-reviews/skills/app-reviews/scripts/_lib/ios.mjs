@@ -50,6 +50,18 @@ async function fetchWithRetry(url) {
   throw new Error('Apple App Store reviews request failed: 429 retries exhausted.');
 }
 
+async function fetchOnePage({ appId, country, offset, apiSort, pageSize }) {
+  const url = buildUrl({ appId, country, offset, apiSort, pageSize });
+  const res = await fetchWithRetry(url);
+  return res.json();
+}
+
+export async function fetchFirstPage({ appId, country, sort, pageSize = PAGE_SIZE }) {
+  const apiSort = sort === 'newest' ? 'recent' : null;
+  const cappedPageSize = Math.min(pageSize, MAX_PAGE_SIZE);
+  return fetchOnePage({ appId, country, offset: 0, apiSort, pageSize: cappedPageSize });
+}
+
 export async function fetchIosReviews({ appId, country, sort, limit }) {
   // Map our sort vocab to Apple's. Only 'recent' is honored — the others
   // silently fall through to Apple's mixed-ranking default.
@@ -61,11 +73,9 @@ export async function fetchIosReviews({ appId, country, sort, limit }) {
   let offset = 0;
 
   while (reviews.length < limit) {
-    const url = buildUrl({ appId, country, offset, apiSort, pageSize });
-    const res = await fetchWithRetry(url);
+    const json = await fetchOnePage({ appId, country, offset, apiSort, pageSize });
     pages += 1;
 
-    const json = await res.json();
     const data = Array.isArray(json.data) ? json.data : [];
     if (data.length === 0) break;
 

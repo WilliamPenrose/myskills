@@ -6,6 +6,34 @@ import { fetchIosReviews } from './_lib/ios.mjs';
 import { resolveProduct, bootstrapIfMissing, getProductsPath, resolveDataDir } from './_lib/products.mjs';
 import { resolveDbPath, openDb, appReviewKey, countReviews, upsertReview } from './_lib/db.mjs';
 
+function isNonEmptyString(v) { return typeof v === 'string' && v.trim().length > 0; }
+function isPresentNumber(v) { return typeof v === 'number'; }
+
+function computeHealth(platform, reviews) {
+  const total = reviews.length;
+  if (total === 0) return null;
+  if (platform === 'play') {
+    return {
+      rating: reviews.filter((r) => isPresentNumber(r.rating)).length,
+      content: reviews.filter((r) => isNonEmptyString(r.content)).length,
+      reviewedAt: reviews.filter((r) => isNonEmptyString(r.reviewedAt)).length,
+      helpfulCount: reviews.filter((r) => isPresentNumber(r.helpfulCount)).length,
+      replyContent: reviews.filter((r) => isNonEmptyString(r.replyContent)).length,
+    };
+  }
+  return {
+    rating: reviews.filter((r) => isPresentNumber(r.rating)).length,
+    title: reviews.filter((r) => isNonEmptyString(r.title)).length,
+    content: reviews.filter((r) => isNonEmptyString(r.content)).length,
+    reviewedAt: reviews.filter((r) => isNonEmptyString(r.reviewedAt)).length,
+  };
+}
+
+function formatHealth(health, total) {
+  if (!health) return '';
+  return Object.entries(health).map(([k, v]) => `${k}=${v}/${total}`).join(' ');
+}
+
 const HELP = `
 fetch --product <name> --platform <play|ios> [options]
 
@@ -197,6 +225,8 @@ async function main() {
   const updatedCount = result.reviews.length - newCount;
 
   console.error(`done: ${result.reviews.length} fetched in ${result.pages} pages, ${newCount} new / ${updatedCount} updated`);
+  const health = computeHealth(args.platform, result.reviews);
+  if (health) console.error(`health: ${formatHealth(health, result.reviews.length)}`);
 }
 
 main().catch((e) => {

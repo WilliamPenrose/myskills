@@ -24,7 +24,7 @@ export async function fetchPlayReviews({ appId, country, lang, sort, limit }) {
   return { reviews, pages };
 }
 
-async function fetchPage({ appId, country, lang, sort, count, paginationToken }) {
+export async function fetchPageRaw({ appId, country, lang, sort, count, paginationToken }) {
   const url = new URL('/_/PlayStoreUi/data/batchexecute', PLAY_BASE);
   url.searchParams.set('hl', lang);
   url.searchParams.set('gl', country);
@@ -41,7 +41,14 @@ async function fetchPage({ appId, country, lang, sort, count, paginationToken })
   if (text.includes('com.google.play.gateway.proto.PlayGatewayError')) {
     throw new Error('Google Play rejected the reviews request with PlayGatewayError.');
   }
-  return parseResponse(text);
+  const m = RESPONSE_PREFIX_REGEX.exec(text);
+  if (!m) throw new Error('Google Play returned an unexpected reviews response prefix. See references/repairing-scrapers.md.');
+  return m[1];
+}
+
+async function fetchPage(args) {
+  const inner = await fetchPageRaw(args);
+  return parseResponse(inner);
 }
 
 function buildReviewsRequestBody({ appId, sort, count, paginationToken }) {
@@ -55,12 +62,10 @@ function buildReviewsRequestBody({ appId, sort, count, paginationToken }) {
   return new URLSearchParams({ 'f.req': JSON.stringify(batch) }).toString();
 }
 
-function parseResponse(text) {
-  const m = RESPONSE_PREFIX_REGEX.exec(text);
-  if (!m) throw new Error('Google Play returned an unexpected reviews response prefix.');
-  const outer = JSON.parse(m[1]);
+function parseResponse(inner) {
+  const outer = JSON.parse(inner);
   const payloadText = nested(outer, [0, 2]);
-  if (typeof payloadText !== 'string') throw new Error('Google Play reviews response missing payload.');
+  if (typeof payloadText !== 'string') throw new Error('Google Play reviews response missing payload. See references/repairing-scrapers.md.');
   const payload = JSON.parse(payloadText);
   const reviewItems = nested(payload, [0]);
   const tokenContainer = Array.isArray(payload) && payload.length >= 2 ? payload[payload.length - 2] : undefined;
