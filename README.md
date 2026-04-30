@@ -27,7 +27,30 @@ npx skills add WilliamPenrose/myskills -a gemini-cli       # Gemini CLI
 npx skills add WilliamPenrose/myskills -a github-copilot   # GitHub Copilot
 ```
 
-For [other agents](https://github.com/vercel-labs/skills#supported-agents), substitute `-a <agent>`.
+For other agents, substitute `-a <agent>` with one of:
+
+<details>
+<summary>Full list of supported <code>-a</code> values</summary>
+
+```
+adal            cortex          junie           opencode        roo
+aider-desk      crush           kilo            openhands       rovodev
+amp             deepagents      kimi-cli        pi              tabnine-cli
+antigravity     devin           kiro-cli        pochi           trae
+augment         dexto           kode            qoder           trae-cn
+bob             droid           mcpjam          qwen-code       universal
+cline           firebender      mistral-vibe    replit          warp
+codearts-agent  forgecode       mux             zencoder
+codebuddy       goose           neovate
+codemaker       iflow-cli       openclaw
+codestudio
+command-code
+continue
+```
+
+Source of truth: [vercel-labs/skills supported agents table](https://github.com/vercel-labs/skills#supported-agents).
+
+</details>
 
 ## Update
 
