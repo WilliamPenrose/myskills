@@ -20,11 +20,12 @@ After install, some skills require a one-time `npm install` inside the skill dir
 ## Install — other agents
 
 ```
-npx skills add WilliamPenrose/myskills -a codex            # OpenAI Codex
-npx skills add WilliamPenrose/myskills -a cursor           # Cursor
-npx skills add WilliamPenrose/myskills -a windsurf         # Windsurf
-npx skills add WilliamPenrose/myskills -a gemini-cli       # Gemini CLI
-npx skills add WilliamPenrose/myskills -a github-copilot   # GitHub Copilot
+npx skills add WilliamPenrose/myskills -a codex      # OpenAI Codex
+npx skills add WilliamPenrose/myskills -a cursor     # Cursor
+npx skills add WilliamPenrose/myskills -a windsurf   # Windsurf
+npx skills add WilliamPenrose/myskills -a opencode   # OpenCode
+npx skills add WilliamPenrose/myskills -a openclaw   # OpenClaw
+npx skills add WilliamPenrose/myskills -a trae       # Trae
 ```
 
 For other agents, substitute `-a <agent>` with one of:
@@ -33,16 +34,16 @@ For other agents, substitute `-a <agent>` with one of:
 <summary>Full list of supported <code>-a</code> values</summary>
 
 ```
-adal            cortex          junie           opencode        roo
-aider-desk      crush           kilo            openhands       rovodev
-amp             deepagents      kimi-cli        pi              tabnine-cli
-antigravity     devin           kiro-cli        pochi           trae
-augment         dexto           kode            qoder           trae-cn
-bob             droid           mcpjam          qwen-code       universal
-cline           firebender      mistral-vibe    replit          warp
-codearts-agent  forgecode       mux             zencoder
-codebuddy       goose           neovate
-codemaker       iflow-cli       openclaw
+adal            cortex          gemini-cli      kode            qwen-code
+aider-desk      crush           github-copilot  mcpjam          replit
+amp             deepagents      goose           mistral-vibe    roo
+antigravity     devin           iflow-cli       mux             rovodev
+augment         dexto           junie           neovate         tabnine-cli
+bob             droid           kilo            openhands       trae-cn
+cline           firebender      kimi-cli        pi              universal
+codearts-agent  forgecode       kiro-cli        pochi           warp
+codebuddy                                       qoder           zencoder
+codemaker
 codestudio
 command-code
 continue
