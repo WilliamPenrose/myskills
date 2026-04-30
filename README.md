@@ -31,16 +31,8 @@ For [other agents](https://github.com/vercel-labs/skills#supported-agents), subs
 
 ## Update
 
-`npx skills update` doesn't filter by source repo, so list every skill from this marketplace explicitly:
-
 ```
 npx skills update app-reviews
-```
-
-When more skills land here, append them on the same line:
-
-```
-npx skills update app-reviews foo-tool bar
 ```
 
 ## License
