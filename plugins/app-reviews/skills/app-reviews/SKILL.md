@@ -100,7 +100,9 @@ When the user asks you to analyze app reviews:
    ```
    Read stderr for progress (the first line prints the resolved data dir); stdout is silent on success.
 
-   **iOS soft cap:** the iOS fetcher refuses `--limit > 100` unless `--force` is passed. Apple's reviews API is heavily rate-limited; pulling more than ~100 in one country routinely triggers minutes of 429 backoffs and often still fails. Default to `--limit 100` for iOS — the most recent reviews are usually enough to surface the dominant complaints. If you genuinely need more (e.g. user explicitly asks for an exhaustive pull, or 100 isn't surfacing what you need), tell the user it'll be slow and add `--force`.
+   **iOS soft cap:** the iOS fetcher refuses `--limit > 100` unless `--force` is passed. Apple's reviews API is heavily rate-limited (page size capped at 20, IP-bucketed throttling); pulling more than ~100 in one country routinely triggers minutes of 429 backoffs and often still fails. Default to `--limit 100` for iOS — the most recent reviews are usually enough to surface the dominant complaints. If you genuinely need more (e.g. user explicitly asks for an exhaustive pull, or 100 isn't surfacing what you need), tell the user it'll be slow and add `--force`.
+
+   **iOS stats line:** every iOS fetch prints an `ios stats:` line on stderr summarizing `requests` (HTTP calls made), `429s` (rate-limit hits during this run), `pacer` (cumulative wait imposed by the 1.5s minimum-interval throttle), `server` (cumulative response time from Apple), `backoff` (cumulative wait after 429s), `total` (wall time), and `avgServerMs`. If `429s > 0` or `backoff` is large, the run was throttled — wait longer between iOS fetches or try a different country next time. If `pacer` dominates `total`, the bottleneck is our internal throttle, not Apple.
 
 4. **Evaluate and read the JSON.** Default to a 90-day time window for "what are users saying" / "user feedback" / "recent reviews" type asks:
    ```
@@ -120,7 +122,7 @@ When the user asks you to analyze app reviews:
 
 ## evaluate output
 
-Reviews are first filtered by a junk floor (drops near-empty reviews like single emojis or one-word ratings — controlled by `--min-bytes`, default 15), then ranked by a language-neutral score that favors substantive text, helpful_count, negative ratings, dev replies, and recency. Top `--top` (default 300) are emitted. See `_lib/signals.mjs` for the exact formula.
+Reviews are first filtered by a junk floor (drops near-empty reviews like single emojis or one-word ratings — controlled by `--min-bytes`, default 15), then ranked by a language-neutral score that favors substantive text, helpful_count, negative ratings, dev replies, and recency. Top `--top` (default 200) are emitted. See `_lib/signals.mjs` for the exact formula.
 
 `--since YYYY-MM-DD` is a hard cutoff applied before ranking — use it when you know a release date and only want feedback on the current build.
 
