@@ -29,6 +29,20 @@ npx skills add WilliamPenrose/myskills -a github-copilot   # GitHub Copilot
 
 For [other agents](https://github.com/vercel-labs/skills#supported-agents), substitute `-a <agent>`.
 
+## Update
+
+`npx skills update` doesn't filter by source repo, so list every skill from this marketplace explicitly:
+
+```
+npx skills update app-reviews
+```
+
+When more skills land here, append them on the same line:
+
+```
+npx skills update app-reviews foo-tool bar
+```
+
 ## License
 
 [MIT](LICENSE)
