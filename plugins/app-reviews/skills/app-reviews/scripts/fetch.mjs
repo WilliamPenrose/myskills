@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import './_lib/silence-warnings.mjs';
 import './_lib/proxy.mjs';
+import './_lib/silence-warnings.mjs';
 import { fetchPlayReviews } from './_lib/play.mjs';
 import { fetchIosReviews } from './_lib/ios.mjs';
 import { resolveProduct, bootstrapIfMissing, getProductsPath, resolveDataDir } from './_lib/products.mjs';

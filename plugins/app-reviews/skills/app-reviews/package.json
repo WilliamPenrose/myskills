@@ -6,8 +6,5 @@
   "type": "module",
   "engines": {
     "node": ">=22"
-  },
-  "dependencies": {
-    "undici": "^6.21.0"
   }
 }

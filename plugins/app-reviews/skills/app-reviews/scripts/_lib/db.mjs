@@ -1,6 +1,6 @@
-import { DatabaseSync } from 'node:sqlite';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+const { DatabaseSync } = await import('node:sqlite');
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS app_reviews (

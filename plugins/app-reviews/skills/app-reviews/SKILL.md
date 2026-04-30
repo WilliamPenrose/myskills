@@ -16,16 +16,6 @@ Two scripts. They are tools, not analysis:
 
 Analysis itself is your job. Read the JSON, look for patterns, draw conclusions in the conversation. Do not call out to another LLM for this.
 
-## Installation
-
-This skill depends on the `undici` npm package for proxy support (so the scripts honor `HTTPS_PROXY` / `HTTP_PROXY` env vars). After cloning or copying the skill, run once:
-
-```
-cd <skill_dir> && npm install --omit=dev
-```
-
-Skip this only if you are sure no HTTP/HTTPS proxy is needed in your environment — the import will fail otherwise.
-
 ## Where data lives
 
 Reviews and the product registry live in a project-local `.app-reviews/` directory:
