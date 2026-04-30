@@ -62,7 +62,22 @@ A reference `products.example.json` ships in this skill's directory.
 
 When the user asks you to analyze app reviews:
 
-1. **Resolve the colloquial name to a canonical product.** The scripts handle this for you, but if you want to inspect first, read the active `.app-reviews/products.json` (run any script with `--help` if you need a reminder of which directory it picks). **Never invent app IDs.** If the name doesn't resolve, ask the user; do not guess.
+1. **Resolve the colloquial name to a canonical product.** The fetch/evaluate scripts look up the name in `.app-reviews/products.json` (canonical key + aliases, case-insensitive). If it resolves, you're done — proceed to step 2.
+
+   If the name does **not** resolve, do **not** ask the user for a Play package name or iOS numeric ID — most users don't know that mapping. **Research it yourself**, then confirm the right app with the user. Use your own tools (no extra script):
+
+   - **iTunes search API via `WebFetch`** — clean JSON, the most reliable iOS source:
+     ```
+     https://itunes.apple.com/search?term=NAME&entity=software&country=us&limit=8
+     ```
+     Pull `trackName`, `sellerName`, `trackId` (the numeric `ios` ID), and `trackViewUrl` from each result. Vary `country=` if the user mentioned a non-US market.
+   - **Google Play via `WebSearch`** — query `NAME site:play.google.com/store/apps` and read package IDs out of the result URLs (`?id=com.xxx.yyy`). For richer detail, `WebFetch` `https://play.google.com/store/apps/details?id=PACKAGE&hl=en&gl=us` to confirm app name and developer.
+
+   Present the top 2–3 candidates per platform (name, developer, store URL) and ask the user **(a)** which app they meant and **(b)** which country/locale to analyze. Asking about market is fine; asking them to translate a colloquial name into a raw app ID is not.
+
+   Once confirmed, append the entry to `.app-reviews/products.json` (canonical key, optional aliases, `play`, `ios`, `default_country`) before fetching. Edit the user's data file — never edit the skill's `products.example.json`.
+
+   **Never invent app IDs from training data.** If the search returns nothing useful (truly obscure / unreleased app), then ask the user.
 
 2. **Resolve `(country, hl)` for Play before fetching.** Google Play's reviews endpoint filters by `hl` (host language), not `gl`. **Omitting `hl` returns a global English fallback set with no error — silently wrong data.** The fetch script therefore requires `--lang` for `--platform play` and will refuse to run without it.
 
@@ -131,14 +146,16 @@ Sort order in the array is descending by score. Bucketing by topic (pricing, qua
 
 ## Adding a new alias
 
-If the user refers to an existing product by a name not in the registry (e.g. they said "the drinking app" and you figured out they meant `tipsy`), edit the active `.app-reviews/products.json` and append to the relevant `aliases` array. **Edit the user's data file — never edit the skill's `products.example.json`.**
+If the user refers to an *existing* product by a name not in the registry (e.g. they said "the drinking app" and you figured out they meant the already-registered `tipsy`), edit the active `.app-reviews/products.json` and append to the relevant `aliases` array. **Edit the user's data file — never edit the skill's `products.example.json`.**
+
+For a *new* product the user has never registered, follow the lookup workflow in step 1 of the Workflow section instead — research the app IDs via WebFetch/WebSearch, confirm with the user, and add a fresh top-level entry.
 
 ## Error handling
 
 | stderr signature | Meaning | Action |
 |---|---|---|
 | `created empty products.json at ...` | First-time setup | Tell the user to populate it; exit |
-| `unknown product "X". Known products: ...` | Name didn't match | Pick from the listed products, or ask the user |
+| `unknown product "X". Known products: ...` | Name didn't match | If it's a typo or alias of one of the listed products, add it as an alias. Otherwise it's a new product — run the lookup workflow (Workflow step 1) to research candidates and add an entry. |
 | `product "X" has no <play\|ios> app id configured` | Platform not configured | Skip that platform or ask the user to add it |
 | `Google Play rejected the reviews request with PlayGatewayError` | Google rate-limited or blocked | **Do not retry.** Report to the user; suggest waiting |
 | `Apple App Store reviews request failed with HTTP <status>` | Apple endpoint returned non-2xx (rare outside 429) | Report to the user |
@@ -158,7 +175,7 @@ You diagnose and propose a unified diff; you do not apply it. The user applies.
 
 ## What NOT to do
 
-- **Do not invent app IDs or product names.** Lookup is deterministic via products.json. If a name isn't there, ask the user.
+- **Do not invent app IDs or product names from training data.** Lookup is deterministic via products.json; if a name isn't there, research it via WebFetch/WebSearch on the public stores (see Workflow step 1) and confirm with the user before adding it. Don't dump the raw-ID lookup task on the user.
 - **Do not pipe `fetch` stderr into analysis.** It's progress reporting, not data.
 - **Do not re-run `evaluate` with different `--top` values to "get more".** Set `--top` once. The selection is deterministic given the inputs.
 - **Do not analyze the raw `app_reviews` table directly.** Always go through `evaluate` so noise is filtered. (If you really need raw data for a specific deep-dive, fine, but the default path is evaluate-then-analyze.)
