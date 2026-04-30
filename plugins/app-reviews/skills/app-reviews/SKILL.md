@@ -95,7 +95,7 @@ When the user asks you to analyze app reviews:
 
 3. **Fetch reviews.** Run one invocation per platform you want:
    ```
-   node <skill_dir>/scripts/fetch.mjs --product <canonical> --platform play --country tw --lang zh-TW --limit 1000
+   node <skill_dir>/scripts/fetch.mjs --product <canonical> --platform play --country tw --lang zh-TW --limit 500
    node <skill_dir>/scripts/fetch.mjs --product <canonical> --platform ios  --country tw --limit 100
    ```
    Read stderr for progress (the first line prints the resolved data dir); stdout is silent on success.
