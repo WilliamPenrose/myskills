@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 const { DatabaseSync } = await import('node:sqlite');
 
-const SCHEMA_SQL = `
+const APP_REVIEWS_SCHEMA = `
 CREATE TABLE IF NOT EXISTS app_reviews (
   review_key TEXT PRIMARY KEY,
   product_key TEXT NOT NULL,
@@ -38,7 +38,9 @@ CREATE INDEX IF NOT EXISTS idx_app_reviews_reviewed_at
   ON app_reviews(reviewed_at);
 CREATE INDEX IF NOT EXISTS idx_app_reviews_rating
   ON app_reviews(rating);
+`;
 
+const APP_REVIEW_FEATURES_SCHEMA = `
 CREATE TABLE IF NOT EXISTS app_review_features (
   review_key TEXT PRIMARY KEY,
   product_key TEXT NOT NULL,
@@ -50,21 +52,11 @@ CREATE TABLE IF NOT EXISTS app_review_features (
   evaluated_at TEXT NOT NULL,
   rating INTEGER,
   helpful_count INTEGER NOT NULL,
-  title_length INTEGER NOT NULL,
-  content_length INTEGER NOT NULL,
-  combined_length INTEGER NOT NULL,
-  word_count INTEGER NOT NULL,
+  meaningful_bytes INTEGER NOT NULL,
   reviewed_at TEXT,
   app_version TEXT,
-  has_product_signal INTEGER NOT NULL,
-  has_pricing_signal INTEGER NOT NULL,
-  has_usage_signal INTEGER NOT NULL,
-  has_quality_signal INTEGER NOT NULL,
-  has_feature_signal INTEGER NOT NULL,
-  has_issue_signal INTEGER NOT NULL,
-  signal_count INTEGER NOT NULL,
+  has_reply INTEGER NOT NULL,
   floor_pass INTEGER NOT NULL,
-  floor_reason TEXT,
   analysis_value_score REAL NOT NULL,
   passed INTEGER NOT NULL
 );
@@ -72,6 +64,11 @@ CREATE TABLE IF NOT EXISTS app_review_features (
 CREATE INDEX IF NOT EXISTS idx_app_review_features_product_passed
   ON app_review_features(product_key, platform, passed, analysis_value_score);
 `;
+
+// Bumped when the features-table columns change incompatibly. The features
+// table is fully derived from app_reviews, so the migration just drops it
+// and lets the next evaluate run repopulate it.
+const FEATURES_SCHEMA_VERSION = 2;
 
 export function resolveDbPath(dataDir) {
   if (process.env.APP_REVIEWS_DB) return path.resolve(process.env.APP_REVIEWS_DB);
@@ -83,7 +80,14 @@ export function openDb(dbPath) {
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA busy_timeout = 10000');
-  db.exec(SCHEMA_SQL);
+  db.exec(APP_REVIEWS_SCHEMA);
+
+  const userVer = db.prepare('PRAGMA user_version').get().user_version ?? 0;
+  if (userVer < FEATURES_SCHEMA_VERSION) {
+    db.exec('DROP TABLE IF EXISTS app_review_features');
+    db.exec(`PRAGMA user_version = ${FEATURES_SCHEMA_VERSION}`);
+  }
+  db.exec(APP_REVIEW_FEATURES_SCHEMA);
   return db;
 }
 
@@ -123,11 +127,9 @@ export function upsertReview(db, row) {
 
 const FEATURE_COLUMNS = [
   'review_key', 'product_key', 'platform', 'app_id', 'country', 'lang', 'sort',
-  'evaluated_at', 'rating', 'helpful_count', 'title_length', 'content_length',
-  'combined_length', 'word_count', 'reviewed_at', 'app_version',
-  'has_product_signal', 'has_pricing_signal', 'has_usage_signal', 'has_quality_signal',
-  'has_feature_signal', 'has_issue_signal', 'signal_count',
-  'floor_pass', 'floor_reason', 'analysis_value_score', 'passed',
+  'evaluated_at', 'rating', 'helpful_count', 'meaningful_bytes',
+  'reviewed_at', 'app_version', 'has_reply',
+  'floor_pass', 'analysis_value_score', 'passed',
 ];
 
 export function clearFeaturesPassed(db, productKey, platform) {

@@ -12,7 +12,9 @@ Fetch and filter mobile app store reviews so you can analyze them directly.
 Two scripts. They are tools, not analysis:
 
 1. `fetch.mjs` — pulls reviews from Google Play or Apple App Store into a local SQLite DB
-2. `evaluate.mjs` — applies rule-based filters (length + 5 keyword signal groups + a scoring formula) and emits the top-N highest-signal reviews as JSON on stdout
+2. `evaluate.mjs` — drops junk (reviews with too little analyzable text), scores the rest by a language-neutral formula (substance + crowd-validation + rating + dev reply), and emits the top-N as JSON on stdout
+
+The strategy is intentionally **language-agnostic** — no keyword regex, no per-language tuning. It works on English, CJK, RTL scripts, etc. uniformly. Topical categorization (pricing complaints vs. quality complaints vs. ...) is the LLM's job, not the script's.
 
 Analysis itself is your job. Read the JSON, look for patterns, draw conclusions in the conversation. Do not call out to another LLM for this.
 
@@ -85,17 +87,43 @@ When the user asks you to analyze app reviews:
 
    **iOS soft cap:** the iOS fetcher refuses `--limit > 100` unless `--force` is passed. Apple's reviews API is heavily rate-limited; pulling more than ~100 in one country routinely triggers minutes of 429 backoffs and often still fails. Default to `--limit 100` for iOS — the most recent reviews are usually enough to surface the dominant complaints. If you genuinely need more (e.g. user explicitly asks for an exhaustive pull, or 100 isn't surfacing what you need), tell the user it'll be slow and add `--force`.
 
-4. **Evaluate and read the JSON.** Run:
+4. **Evaluate and read the JSON.** Default to a 90-day time window for "what are users saying" / "user feedback" / "recent reviews" type asks:
    ```
-   node <skill_dir>/scripts/evaluate.mjs --product <canonical>
+   node <skill_dir>/scripts/evaluate.mjs --product <canonical> --days 90
    ```
    Stdout is a JSON array of high-signal reviews. Parse it and analyze.
 
+   **When to override `--days 90`:**
+   - User explicitly asks for historical / overall reception → omit `--days` (the score's recency decay still mildly favors recent ones, but old impactful reviews can compete)
+   - User mentions a specific release date → use `--since YYYY-MM-DD` with that date
+   - User wants very fresh signal ("this week", "the last update") → `--days 7` or `--days 30`
+   - Low-volume product where 90 days yields too few reviews → widen the window or drop `--days`
+
+   `--since` and `--days` are mutually exclusive.
+
 `<skill_dir>` is the directory containing this SKILL.md.
 
-## evaluate JSON output schema
+## evaluate selection strategy
 
-Each element of the array:
+Two layers, intentionally separated:
+
+**Floor (junk gate, language-neutral):** drop reviews whose `meaningful_bytes < --min-bytes` (default 15). `meaningful_bytes` is the UTF-8 byte length of the review after stripping every non-letter character (`\p{L}`). This filters single-emoji reviews, "good"/"垃圾" one-word reviews, pure invite codes, etc., without bias against any language. ASCII chars are 1 byte each, CJK chars are 3 bytes each in UTF-8 — so 15 bytes ≈ 5 ASCII letters or 5 CJK chars, roughly equivalent in information content.
+
+**Score (ranking, language-neutral):**
+```
+log(1 + meaningful_bytes)
++ log(1 + helpful_count)
++ (rating <= 2 ? 1.0 : rating <= 3 ? 0.3 : 0)
++ (reply_content present ? 0.5 : 0)
++ exp(-age_days / 180)
+```
+The recency term has a 180-day characteristic time: today → +1.0, 90 days → +0.61, 180 days → +0.37, 365 days → +0.13. For a fast-iterating product this pushes feedback about old versions out of the top by default — a 1-year-old review needs strong helpful_count + low rating to compete with a recent one.
+
+**Optional hard cutoff:** `--since YYYY-MM-DD` drops reviews dated before that day. Use it when you know a release date and only want feedback that reflects the current build.
+
+After scoring, the top `--top` reviews (default 300) are emitted.
+
+**JSON output schema** — each element of the array:
 
 | Field | Type | Notes |
 |---|---|---|
@@ -110,10 +138,10 @@ Each element of the array:
 | `reviewed_at` | ISO 8601 string | |
 | `app_version` | string or null | |
 | `reply_content` | string or null | Developer's reply, if any (Play only) |
-| `signals` | array of strings | Subset of `["pricing", "usage", "quality", "feature", "issue"]` matched by keyword regex |
-| `score` | number | Higher = denser signal. Formula: `log(1+combined_length) + 0.5*log(1+helpful) + signal_count + (rating<=3 ? 0.5 : 0)` |
+| `meaningful_bytes` | int | Substance metric used by floor and score |
+| `score` | number | Sort key (descending). Formula above. |
 
-Use `signals` to bucket complaints by topic. Use `score` to prioritize when there are too many to read. Sort order in the array is descending by score.
+Sort order in the array is descending by score. Bucketing by topic (pricing, quality, etc.) is your job once you read the JSON — the script does not pre-categorize.
 
 ## Adding a new alias
 
