@@ -390,7 +390,43 @@ async function runImport(args) {
     console.log(`\nArchived to: ${archived}`);
   }
 }
-async function runAudit(args)   { throw new Error('audit not yet implemented'); }
+async function runAudit(args) {
+  const dataDir = resolveDataDir({ cliFlag: args.dataDir });
+  const dirs = dataDirPaths(dataDir);
+  const db = openDb(dirs.db);
+  try {
+    const sql = `
+      SELECT
+        keyword,
+        COUNT(*) AS n,
+        SUM(CASE WHEN decision_auto = 'dropped' THEN 1 ELSE 0 END) AS n_dropped,
+        SUM(CASE WHEN decision_human = 'dropped' THEN 1 ELSE 0 END) AS n_human_dropped,
+        SUM(CASE WHEN decision_human = 'kept' THEN 1 ELSE 0 END) AS n_human_kept,
+        AVG(score_v2) AS v2_mean,
+        AVG(score_v3) AS v3_mean,
+        MIN(score_v3) AS v3_min,
+        MAX(keyword_flag) AS flag
+      FROM relevance_annotations
+      GROUP BY keyword
+      ORDER BY keyword
+    `;
+    const rows = db.prepare(sql).all();
+    if (!rows.length) {
+      console.log('No annotations yet — run `relevance score` first.');
+      return;
+    }
+    const fmt = (n, d = 3) => Number.isFinite(n) ? n.toFixed(d) : '—';
+    console.log('keyword              | n   | drop | h_drop | h_keep | v2_mean | v3_min | flag');
+    console.log('---------------------|-----|------|--------|--------|---------|--------|----------');
+    for (const r of rows) {
+      console.log(
+        `${r.keyword.padEnd(20)} | ${String(r.n).padStart(3)} | ${String(r.n_dropped).padStart(4)} | ${String(r.n_human_dropped).padStart(6)} | ${String(r.n_human_kept).padStart(6)} | ${fmt(r.v2_mean).padStart(7)} | ${fmt(r.v3_min).padStart(6)} | ${r.flag ?? ''}`
+      );
+    }
+  } finally {
+    db.close();
+  }
+}
 
 function parseArgs(argv) {
   const sub = argv[2];
