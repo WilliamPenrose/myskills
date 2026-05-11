@@ -2,5 +2,6 @@ node_modules/
 .claude/
 .app-reviews/
 docs/superpowers/
+notes/
 .qlydata/
 .logs/

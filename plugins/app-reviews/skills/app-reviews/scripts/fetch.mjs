@@ -57,10 +57,12 @@ Notes on --lang:
   passing --lang for ios is treated as a usage error.
 
 Notes on iOS rate limits:
-  iOS pulls are aggressively rate-limited (HTTP 429) by Apple's per-page-size-10
-  catalog API. Pulling >100 for one country routinely costs many minutes of
-  exponential-backoff. To prevent agents from burning that time silently, iOS
-  fetches >100 require --force.
+  iOS pulls are aggressively rate-limited (HTTP 429) by Apple's catalog API
+  (page size capped at 20). Pulling >100 for one country routinely costs many
+  minutes of exponential-backoff. To prevent agents from burning that time
+  silently, iOS fetches >100 require --force. Each iOS fetch prints an
+  "ios stats:" line on stderr (request count, 429s, pacer/server/backoff
+  timings) so you can tell whether the run was throttled or healthy.
 
 Data directory resolution order:
   1) --data-dir flag
@@ -225,6 +227,16 @@ async function main() {
   const updatedCount = result.reviews.length - newCount;
 
   console.error(`done: ${result.reviews.length} fetched in ${result.pages} pages, ${newCount} new / ${updatedCount} updated`);
+  if (args.platform === 'ios' && result.stats) {
+    const s = result.stats;
+    const avgServerMs = s.requests > 0 ? Math.round(s.serverMs / s.requests) : 0;
+    console.error(
+      `ios stats: pageSize=${s.pageSize} requests=${s.requests} 429s=${s.retry429Count} `
+      + `pacer=${(s.pacerWaitMs / 1000).toFixed(1)}s server=${(s.serverMs / 1000).toFixed(1)}s `
+      + `backoff=${(s.backoffMs / 1000).toFixed(1)}s total=${(s.totalMs / 1000).toFixed(1)}s `
+      + `avgServerMs=${avgServerMs}`,
+    );
+  }
   const health = computeHealth(args.platform, result.reviews);
   if (health) console.error(`health: ${formatHealth(health, result.reviews.length)}`);
 }

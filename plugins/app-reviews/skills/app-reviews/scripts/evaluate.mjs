@@ -15,7 +15,7 @@ Required:
 
 Optional:
   --platform <play|ios|both>   default: both
-  --top <n>                    selection limit, default: 300
+  --top <n>                    selection limit, default: 200
   --min-bytes <n>              floor: minimum meaningful UTF-8 bytes
                                (letters only, after stripping non-letter chars).
                                default: 15
@@ -28,7 +28,7 @@ Optional:
 `.trim();
 
 function parseArgs(argv) {
-  const args = { platform: 'both', top: 300, minBytes: 15 };
+  const args = { platform: 'both', top: 200, minBytes: 15 };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--help' || a === '-h') { args.help = true; continue; }

@@ -17,31 +17,66 @@ import { createHash } from 'node:crypto';
 //   - Pagination via `offset`; response carries `next` until depleted
 //   - 429 "API capacity exceeded" fires under burst load — handled by the
 //     rate limiter + exponential backoff below
-const PAGE_SIZE = 10;            // friendly to rate limit; user requested default
-const MAX_PAGE_SIZE = 20;        // Apple's hard ceiling
+const PAGE_SIZE = 20;            // Apple's hard ceiling — fewer requests = less 429 risk
+const MAX_PAGE_SIZE = 20;        // Apple's hard ceiling (values 21+ return HTTP 400)
 
-const MIN_INTERVAL_MS = 1500;    // pacer between consecutive requests
+const MIN_INTERVAL_MS = 3000;    // pacer between consecutive requests; raised
+                                 // from 1500ms after observing Apple's IP
+                                 // bucket runs dry after ~3 quick requests
+                                 // (token refill ≈ 1 per 5s, so 3s gives a
+                                 // little headroom while keeping throughput
+                                 // tolerable). If 429s creep back, bump to
+                                 // 5000ms — that matches the observed refill.
 const MAX_RETRIES = 5;
 const BASE_BACKOFF_MS = 5000;
 
 let lastRequestAt = 0;
-async function paced(url) {
-  const wait = Math.max(0, lastRequestAt + MIN_INTERVAL_MS - Date.now());
-  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-  lastRequestAt = Date.now();
-  return fetch(url);
+// `currentStats` is set by fetchIosReviews for the duration of one call so
+// the pacer and retry helpers can attribute waits and 429s back to that
+// invocation. It's null between calls. Module-level rather than threaded
+// through every helper because lastRequestAt already has the same lifetime.
+let currentStats = null;
+
+function ts() {
+  const d = new Date();
+  const pad = (n, w = 2) => String(n).padStart(w, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
 }
 
-async function fetchWithRetry(url) {
+async function paced(url) {
+  const pacerWaitMs = Math.max(0, lastRequestAt + MIN_INTERVAL_MS - Date.now());
+  if (pacerWaitMs > 0) {
+    if (currentStats) currentStats.pacerWaitMs += pacerWaitMs;
+    await new Promise((r) => setTimeout(r, pacerWaitMs));
+  }
+  lastRequestAt = Date.now();
+  if (currentStats) currentStats.requests += 1;
+  const t0 = Date.now();
+  const res = await fetch(url);
+  const serverMs = Date.now() - t0;
+  if (currentStats) currentStats.serverMs += serverMs;
+  return { res, serverMs, pacerWaitMs };
+}
+
+async function fetchWithRetry(url, { offset } = {}) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
-    const res = await paced(url);
-    if (res.ok) return res;
+    const { res, serverMs, pacerWaitMs } = await paced(url);
+    if (res.ok) {
+      const retryNote = attempt > 0 ? ` (retry ${attempt})` : '';
+      const pacerNote = pacerWaitMs > 0 ? ` paced=${pacerWaitMs}ms` : '';
+      console.error(`[${ts()}] iOS offset=${offset} ok server=${serverMs}ms${pacerNote}${retryNote}`);
+      return res;
+    }
     if (res.status === 429 && attempt < MAX_RETRIES) {
+      if (currentStats) currentStats.retry429Count += 1;
       const retryAfter = parseInt(res.headers.get('retry-after') || '', 10);
-      const wait = Number.isFinite(retryAfter) && retryAfter > 0
+      const usedRetryAfter = Number.isFinite(retryAfter) && retryAfter > 0;
+      const wait = usedRetryAfter
         ? retryAfter * 1000
         : BASE_BACKOFF_MS * 2 ** attempt + Math.floor(Math.random() * 1000);
-      console.error(`  iOS reviews: 429, backing off ${wait}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+      if (currentStats) currentStats.backoffMs += wait;
+      const retryAfterNote = usedRetryAfter ? ` retry-after=${retryAfter}s` : '';
+      console.error(`[${ts()}] iOS offset=${offset} 429 attempt=${attempt + 1}/${MAX_RETRIES} server=${serverMs}ms backoff=${wait}ms${retryAfterNote}`);
       await new Promise((r) => setTimeout(r, wait));
       continue;
     }
@@ -52,7 +87,7 @@ async function fetchWithRetry(url) {
 
 async function fetchOnePage({ appId, country, offset, apiSort, pageSize }) {
   const url = buildUrl({ appId, country, offset, apiSort, pageSize });
-  const res = await fetchWithRetry(url);
+  const res = await fetchWithRetry(url, { offset });
   return res.json();
 }
 
@@ -68,25 +103,41 @@ export async function fetchIosReviews({ appId, country, sort, limit }) {
   const apiSort = sort === 'newest' ? 'recent' : null;
   const pageSize = Math.min(PAGE_SIZE, MAX_PAGE_SIZE);
 
-  const reviews = [];
-  let pages = 0;
-  let offset = 0;
+  const stats = {
+    pageSize,
+    requests: 0,
+    retry429Count: 0,
+    pacerWaitMs: 0,
+    serverMs: 0,
+    backoffMs: 0,
+    startedAt: Date.now(),
+    totalMs: 0,
+  };
+  currentStats = stats;
+  try {
+    const reviews = [];
+    let pages = 0;
+    let offset = 0;
 
-  while (reviews.length < limit) {
-    const json = await fetchOnePage({ appId, country, offset, apiSort, pageSize });
-    pages += 1;
+    while (reviews.length < limit) {
+      const json = await fetchOnePage({ appId, country, offset, apiSort, pageSize });
+      pages += 1;
 
-    const data = Array.isArray(json.data) ? json.data : [];
-    if (data.length === 0) break;
+      const data = Array.isArray(json.data) ? json.data : [];
+      if (data.length === 0) break;
 
-    for (const entry of data) {
-      reviews.push(normalize(entry));
-      if (reviews.length >= limit) break;
+      for (const entry of data) {
+        reviews.push(normalize(entry));
+        if (reviews.length >= limit) break;
+      }
+      if (!json.next) break;
+      offset += data.length;
     }
-    if (!json.next) break;
-    offset += data.length;
+    stats.totalMs = Date.now() - stats.startedAt;
+    return { reviews, pages, stats };
+  } finally {
+    currentStats = null;
   }
-  return { reviews, pages };
 }
 
 function buildUrl({ appId, country, offset, apiSort, pageSize }) {
