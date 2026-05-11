@@ -155,7 +155,142 @@ async function runPlan(args) {
   }
 }
 
-async function runFetch(args) { throw new Error('fetch not yet implemented'); }
+async function pickPids(args) {
+  if (args.pids && args.pids.length) return args.pids;
+  if (!args.fromXlsx) throw new Error('must pass --from-xlsx <path> or --pids <csv>');
+
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(args.fromXlsx);
+  const ws = wb.worksheets[0];
+  if (!ws) throw new Error(`no worksheet in ${args.fromXlsx}`);
+  const header = ws.getRow(1);
+  let pidCol = 0;
+  let conclCol = 0;
+  header.eachCell((cell, col) => {
+    const v = String(cell.value ?? '').trim();
+    if (v === 'pid') pidCol = col;
+    if (v === '结论') conclCol = col;
+  });
+  if (!pidCol)   throw new Error(`xlsx missing "pid" header: ${args.fromXlsx}`);
+  if (!conclCol) throw new Error(`xlsx missing "结论" header: ${args.fromXlsx}`);
+
+  const pids = [];
+  for (let r = 2; r <= ws.rowCount; r++) {
+    const row = ws.getRow(r);
+    const concl = String(row.getCell(conclCol).value ?? '').trim();
+    if (concl !== '抓') continue;
+    const pid = String(row.getCell(pidCol).value ?? '').trim();
+    if (pid) pids.push(pid);
+  }
+  return pids;
+}
+
+async function runFetch(args) {
+  const dataDir = resolveDataDir({ cliFlag: args.dataDir });
+  const dirs = dataDirPaths(dataDir);
+  const { term } = redirectStderrToLog('influencer-fetch', dirs.logs);
+  const filterTag = `time=${args.time},type=${args.type || ''}`;
+  term(`[fetch] data-dir=${dataDir}  filter="${filterTag}"  window=${args.windowDays}d  retry=${args.retryAfterMs ? `${args.retryAfterMs / 60000}m` : 'off'}  force=${args.force}`);
+
+  const db = openDb(dirs.db);
+
+  const allPids = await pickPids(args);
+  term(`[fetch] candidates: ${allPids.length} pid(s)`);
+
+  const work = [];
+  const skipped = [];
+  for (const pid of allPids) {
+    if (args.limit && work.length >= args.limit) break;
+    const d = gateDecision(db, pid, filterTag, args);
+    if (d.skip) skipped.push({ pid, reason: d.reason });
+    else work.push(pid);
+  }
+  term(`[fetch] gate: ${work.length} to scrape, ${skipped.length} skipped`);
+  for (const s of skipped) console.error(`  skip ${s.pid}: ${s.reason}`);
+
+  if (args.dryRun) {
+    console.log(JSON.stringify({ filterTag, candidates: allPids.length, toScrape: work.length, skipped: skipped.length, sampleWork: work.slice(0, 10) }, null, 2));
+    db.close();
+    return;
+  }
+  if (!work.length) {
+    db.close();
+    term('[fetch] nothing to do');
+    return;
+  }
+
+  const runtime = createQlyRuntime();
+  const browser = await runtime.ensureBrowser({ autoLaunch: true });
+  const pages = await browser.pages();
+  let target = pages.find((p) => { try { return p.url().includes('qlydata.com'); } catch { return false; } });
+  if (!target) {
+    term('[fetch] opening new tab');
+    target = await browser.newPage();
+  }
+  await target.bringToFront();
+  const primitives = createSecurePuppeteerPrimitives({
+    page: target,
+    throttle: { minDelay: 500, maxDelay: 1000 },
+  });
+
+  const upsertSighting = db.prepare(`
+    INSERT INTO influencer_sightings (uid, pid, observed_at, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(uid, pid) DO UPDATE SET updated_at = excluded.updated_at
+  `);
+  const insertRun = db.prepare(`
+    INSERT INTO influencer_pid_runs (pid, filter, scraped_at, uid_count, status, reason)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  let okCount = 0;
+  let failCount = 0;
+
+  for (let i = 0; i < work.length; i++) {
+    const pid = work[i];
+    const stamp = shanghaiISO();
+    term(`\n[fetch ${i + 1}/${work.length}] pid=${pid}`);
+    try {
+      const result = await extractInfluencerUids({
+        page: target, primitives, pid,
+        time: args.time, type: args.type,
+      });
+      const uids = [...new Set(result.uids ?? [])];
+      db.exec('BEGIN');
+      try {
+        for (const uid of uids) upsertSighting.run(uid, pid, stamp, stamp);
+        insertRun.run(pid, filterTag, stamp, uids.length, 'ok', null);
+        db.exec('COMMIT');
+      } catch (e) {
+        db.exec('ROLLBACK');
+        throw e;
+      }
+      term(`[fetch] ${pid}: ${uids.length} uids`);
+      okCount += 1;
+    } catch (err) {
+      const msg = String(err?.message ?? err);
+      let status = 'failed';
+      if (msg.includes('今日访问次数已达上限') || msg.includes('quota')) status = 'quota_hit';
+      else if (msg.includes('session') || msg.includes('未登录')) status = 'session_lost';
+      try {
+        insertRun.run(pid, filterTag, stamp, 0, status, msg.slice(0, 500));
+      } catch { /* swallow run-insert errors after rollback */ }
+      term(`[fetch] ${pid} ${status}: ${msg.slice(0, 200)}`);
+      failCount += 1;
+      if (status === 'quota_hit') {
+        term(`[fetch] QUOTA HIT — exiting cleanly. Re-run tomorrow.`);
+        break;
+      }
+      if (status === 'session_lost') {
+        term(`[fetch] SESSION EXPIRED — log in qlydata.com and re-run.`);
+        break;
+      }
+    }
+  }
+
+  db.close();
+  term(`\n[fetch] done: ok=${okCount} fail=${failCount}`);
+}
 
 function parseArgs(argv) {
   const sub = argv[2];
