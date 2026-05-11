@@ -1,0 +1,16 @@
+# qly skill global configuration (rarely edited).
+# Copy this file to .qlydata/config.yaml and fill in keywords_source.path.
+
+filters:
+  price: [5, 500]
+  live_sales: [1, 100000]
+
+influencer:
+  min_gmv: 1
+  window_days: 7
+
+keywords_source:
+  # Path to your business-maintained keyword xlsx or csv.
+  # Required columns: key_word (string), is_track (1 or 0).
+  # Other columns (id, info_pp, info_person, ...) are ignored by the skill.
+  path: PATH/TO/your-keywords.csv

@@ -3,3 +3,5 @@ node_modules/
 .app-reviews/
 docs/superpowers/
 notes/
+.qlydata/
+.logs/

@@ -1,0 +1,17 @@
+{
+  "name": "claude-skill-qly",
+  "version": "2026.5.10",
+  "description": "Claude Code skill: drive qlydata.com (千里眼) for keyword-driven product + KOL scraping with local BGE relevance scoring.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@site-use/runtime": "^0.1.1",
+    "@xenova/transformers": "^2.17.2",
+    "exceljs": "^4.4.0",
+    "js-yaml": "^4.1.0",
+    "undici": "^6.21.0"
+  }
+}

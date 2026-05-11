@@ -1,0 +1,9 @@
+{
+  "name": "qly",
+  "version": "2026.5.10",
+  "description": "Drive qlydata.com (千里眼) to harvest products by keyword, score relevance with a local Chinese embedding model, and trace KOL / 带货达人 sellers.",
+  "author": {
+    "name": "WilliamPenrose",
+    "email": "william.panrose@gmail.com"
+  }
+}
