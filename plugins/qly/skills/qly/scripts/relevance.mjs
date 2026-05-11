@@ -282,7 +282,114 @@ async function runExport(args) {
     db.close();
   }
 }
-async function runImport(args)  { throw new Error('import not yet implemented'); }
+const RESULT_TO_DECISION = { '保留': 'kept', '丢弃': 'dropped' };
+
+async function runImport(args) {
+  if (!args.in) {
+    console.error('Missing --in <xlsx>');
+    process.exit(2);
+  }
+  const dataDir = resolveDataDir({ cliFlag: args.dataDir });
+  const dirs = dataDirPaths(dataDir);
+  const inPath = path.resolve(args.in);
+  if (!existsSync(inPath)) {
+    console.error(`File not found: ${inPath}`);
+    process.exit(2);
+  }
+
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(inPath);
+  const ws = wb.worksheets[0];
+  if (!ws) {
+    console.error('No worksheet in xlsx');
+    process.exit(2);
+  }
+
+  const headers = {};
+  ws.getRow(1).eachCell((cell, col) => {
+    headers[String(cell.value ?? '').trim()] = col;
+  });
+  for (const required of ['关键词', '商品链接', '结果']) {
+    if (!headers[required]) {
+      console.error(`Missing required column: ${required}. Found: ${Object.keys(headers).join(', ')}`);
+      process.exit(2);
+    }
+  }
+
+  const db = openDb(dirs.db);
+  const fetchAuto = db.prepare('SELECT decision_auto FROM relevance_annotations WHERE keyword=? AND product_url=?');
+  const update = db.prepare('UPDATE relevance_annotations SET decision_human=?, human_note=? WHERE keyword=? AND product_url=?');
+
+  let agree = 0, override = 0, invalid = 0, missingPK = 0;
+  const warnings = [];
+
+  if (!args.dryRun) db.exec('BEGIN');
+  try {
+    for (let r = 2; r <= ws.rowCount; r++) {
+      const row = ws.getRow(r);
+      const get = (name) => String(row.getCell(headers[name]).value ?? '').trim();
+      const keyword = get('关键词');
+      const productUrl = get('商品链接');
+      const result = get('结果');
+      const note = headers['备注'] ? get('备注') : '';
+      if (!keyword || !productUrl) {
+        warnings.push(`row ${r}: missing 关键词 or 商品链接`);
+        missingPK += 1;
+        continue;
+      }
+      const decisionHuman = RESULT_TO_DECISION[result];
+      if (!decisionHuman) {
+        warnings.push(`row ${r}: 结果 must be 保留 or 丢弃 (got "${result}")`);
+        invalid += 1;
+        continue;
+      }
+      const existing = fetchAuto.get(keyword, productUrl);
+      if (!existing) {
+        warnings.push(`row ${r}: (${keyword}, ${productUrl.slice(0, 50)}…) not in DB`);
+        missingPK += 1;
+        continue;
+      }
+      if (decisionHuman === existing.decision_auto) agree += 1;
+      else override += 1;
+      if (!args.dryRun) update.run(decisionHuman, note || null, keyword, productUrl);
+    }
+    if (!args.dryRun) db.exec('COMMIT');
+  } catch (err) {
+    if (!args.dryRun) db.exec('ROLLBACK');
+    db.close();
+    throw err;
+  }
+  db.close();
+
+  const total = agree + override;
+  console.log(`Input:   ${inPath}`);
+  console.log(`Applied: ${total}${args.dryRun ? '  (DRY RUN)' : ''}`);
+  console.log(`  agree:    ${agree}`);
+  console.log(`  override: ${override}`);
+  if (invalid)   console.log(`Invalid 结果: ${invalid}`);
+  if (missingPK) console.log(`Missing PK:  ${missingPK}`);
+  if (warnings.length) {
+    console.log(`\nWarnings (${warnings.length}):`);
+    for (const w of warnings.slice(0, 20)) console.log(`  ${w}`);
+    if (warnings.length > 20) console.log(`  ...(${warnings.length - 20} more)`);
+  }
+
+  if (!args.dryRun && !args.noArchive && total > 0) {
+    const { renameSync } = await import('node:fs');
+    mkdirSync(dirs.tasksDone, { recursive: true });
+    let archived = path.join(dirs.tasksDone, path.basename(inPath));
+    if (existsSync(archived)) {
+      const ext = path.extname(archived);
+      const base = archived.slice(0, -ext.length);
+      for (let i = 2; i < 1000; i++) {
+        const candidate = `${base}-r${i}${ext}`;
+        if (!existsSync(candidate)) { archived = candidate; break; }
+      }
+    }
+    renameSync(inPath, archived);
+    console.log(`\nArchived to: ${archived}`);
+  }
+}
 async function runAudit(args)   { throw new Error('audit not yet implemented'); }
 
 function parseArgs(argv) {
