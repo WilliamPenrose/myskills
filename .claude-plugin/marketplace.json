@@ -10,6 +10,12 @@
       "source": "./plugins/app-reviews",
       "description": "Fetch and filter Google Play / Apple App Store reviews into JSON for direct LLM analysis.",
       "skills": ["./skills/app-reviews"]
+    },
+    {
+      "name": "qly",
+      "source": "./plugins/qly",
+      "description": "Drive qlydata.com to harvest products, score relevance with BGE, and trace KOLs.",
+      "skills": ["./skills/qly"]
     }
   ]
 }
