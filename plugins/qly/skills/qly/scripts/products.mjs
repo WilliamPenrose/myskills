@@ -25,7 +25,7 @@ import {
   searchKeyword,
   triggerExport,
 } from './_lib/actions.mjs';
-import { assertSession } from './_lib/session.mjs';
+import { assertSession, checkSessionDeep } from './_lib/session.mjs';
 import { redirectStderrToLog } from './_lib/log-redirect.mjs';
 
 const TARGET_HOST = 'qlydata.com';
@@ -150,10 +150,7 @@ async function ensureGoodsSearchTab(browser) {
   }
   if (!target) target = await browser.newPage();
   await target.bringToFront();
-  const u = target.url();
-  if (!u.includes(HASH_INVARIANT)) {
-    await target.goto(GOODS_SEARCH_URL, { waitUntil: 'domcontentloaded' });
-  }
+  await target.goto(GOODS_SEARCH_URL, { waitUntil: 'domcontentloaded' });
   return target;
 }
 
@@ -162,6 +159,31 @@ function requireSuccess(result, step, keyword) {
     throw new Error(`${step} failed for ${keyword}: ${result?.reason ?? 'unknown'}`);
   }
   return result;
+}
+
+const QUOTA_BANNER = '今日访问次数已达上限';
+
+// On any action failure, take a fresh snapshot and disambiguate:
+//   - SessionExpired (URL / dialog / login form / captcha — see session.mjs)
+//   - QuotaExceeded (qly's daily-cap banner present anywhere on the page)
+//   - otherwise, re-throw original error
+// Mirrors the influencer-extract.mjs error-prefix protocol so batch
+// can pattern-match on `SessionExpired:` / `QuotaExceeded:` to abort.
+async function diagnoseAndRethrow(err, { page, primitives }) {
+  const original = err;
+  try {
+    const { reason } = await checkSessionDeep({ page, primitives });
+    if (reason) throw new Error(`SessionExpired: ${reason}`);
+    const sn = await primitives.takeSnapshot();
+    const quotaHit = [...sn.idToNode.values()].some(
+      (n) => typeof n.name === 'string' && n.name.includes(QUOTA_BANNER));
+    if (quotaHit) throw new Error(`QuotaExceeded: ${QUOTA_BANNER}`);
+  } catch (e) {
+    if (e !== original && /^(SessionExpired|QuotaExceeded):/.test(String(e.message))) throw e;
+    // Diagnosis itself failed (e.g. snapshot threw because page navigated mid-call).
+    // Fall through to re-throw the original action error.
+  }
+  throw original;
 }
 
 async function importExistingXlsxs(db, keyword, exportsDir, term) {
@@ -232,31 +254,38 @@ async function main() {
     throttle: { minDelay: 1000, maxDelay: 2000 },
   });
 
+  // Cheap URL-only session gate before the first action. Deep diagnosis
+  // is invoked lazily on any action failure (see diagnoseAndRethrow).
+  await assertSession({ page });
+
   for (const k of todo) {
     term(`\n[products] >>> ${k.key_word}`);
     try {
-      await assertSession(page);
-      requireSuccess(await setPriceRange(primitives, { min: price.min, max: price.max }), 'price', k.key_word);
-      requireSuccess(await setLivestreamSales(primitives, { min: sales.min, max: sales.max }), 'sales', k.key_word);
-      await assertSession(page);
-      requireSuccess(await searchKeyword(primitives, { keyword: k.key_word }), 'search', k.key_word);
-      const result = requireSuccess(await triggerExport(primitives, {
-        page,
-        downloadDir: dirs.exports,
-        filenamePattern: exportFilenamePattern(k.key_word, price, sales),
-      }), 'export', k.key_word);
-      const rows = await parseXlsxForSightings(result.filePath);
-      const r = upsertSightings(db, k.key_word, rows);
-      term(`[products] ${k.key_word}: rows=${rows.length} +${r.inserted} ^${r.updated}`);
+      try {
+        requireSuccess(await setPriceRange(primitives, { min: price.min, max: price.max }), 'price', k.key_word);
+        requireSuccess(await setLivestreamSales(primitives, { min: sales.min, max: sales.max }), 'sales', k.key_word);
+        requireSuccess(await searchKeyword(primitives, { keyword: k.key_word }), 'search', k.key_word);
+        const result = requireSuccess(await triggerExport(primitives, {
+          page,
+          downloadDir: dirs.exports,
+          filenamePattern: exportFilenamePattern(k.key_word, price, sales),
+        }), 'export', k.key_word);
+        const rows = await parseXlsxForSightings(result.filePath);
+        const r = upsertSightings(db, k.key_word, rows);
+        term(`[products] ${k.key_word}: rows=${rows.length} +${r.inserted} ^${r.updated}`);
+      } catch (err) {
+        await diagnoseAndRethrow(err, { page, primitives });
+      }
     } catch (err) {
       const msg = String(err?.message ?? err);
-      if (msg.includes('今日访问次数已达上限') || msg.includes('quota')) {
-        term(`[products] QUOTA HIT — exiting cleanly. Re-run tomorrow to continue.`);
+      if (msg.startsWith('SessionExpired:')) {
+        term(`[products] ABORT: session expired — ${msg.slice('SessionExpired:'.length).trim()}`);
+        term(`[products] Log in qlydata.com in chrome and re-run.`);
         db.close();
         process.exit(1);
       }
-      if (msg.includes('session') || msg.includes('未登录')) {
-        term(`[products] SESSION EXPIRED — log in qlydata.com in chrome and re-run.`);
+      if (msg.startsWith('QuotaExceeded:')) {
+        term(`[products] ABORT: daily quota hit — re-run tomorrow.`);
         db.close();
         process.exit(1);
       }
