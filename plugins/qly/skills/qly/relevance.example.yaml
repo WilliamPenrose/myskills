@@ -1,0 +1,29 @@
+# qly relevance scoring config.
+# Copy this file to .qlydata/relevance.yaml and adjust per_keyword overrides as needed.
+
+thresholds:
+  stage1: 0.55   # mean(v2) below this for a keyword -> flag keyword_flag='low_signal'
+  stage2: 0.30   # individual product v3 below this -> decision_auto='dropped'
+  alpha: 0.4     # weight on negative similarity: v3 = v2 - alpha * neg
+
+positive_default:
+  - 教辅
+  - 课程
+  - 网课
+  - 读书卡
+  - 练习册
+
+negative_default:
+  - 衣服
+  - 食品
+  - 化妆品
+  - 鱼竿
+  - 毛笔
+
+# Per-keyword overrides. Sparse: only add when a keyword has homonyms the
+# defaults miss. Four override forms (see _lib/config.mjs tagsFor()):
+#   negative_extra: [...]  merge into negative_default (most common)
+#   positive_extra: [...]  merge into positive_default
+#   negative: [...]        replace negative_default entirely (rare)
+#   positive: [...]        replace positive_default entirely (rare)
+per_keyword: {}
