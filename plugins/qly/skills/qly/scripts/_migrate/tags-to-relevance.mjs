@@ -13,6 +13,7 @@
 //   node tags-to-relevance.mjs --in tags.yaml --out relevance.yaml
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import url from 'node:url';
 import yaml from 'js-yaml';
 
 const DEFAULT_THRESHOLDS = { stage1: 0.55, stage2: 0.30, alpha: 0.4 };
@@ -43,7 +44,7 @@ function parseArgs(argv) {
   return out;
 }
 
-if (import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}`) {
+if (import.meta.url === url.pathToFileURL(process.argv[1]).href) {
   const args = parseArgs(process.argv);
   if (!args.in || !args.out) {
     console.error('Usage: node tags-to-relevance.mjs --in <tags.yaml> --out <relevance.yaml>');
