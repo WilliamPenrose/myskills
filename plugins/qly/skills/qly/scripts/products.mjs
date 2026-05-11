@@ -150,7 +150,10 @@ async function ensureGoodsSearchTab(browser) {
   }
   if (!target) target = await browser.newPage();
   await target.bringToFront();
-  await target.goto(GOODS_SEARCH_URL, { waitUntil: 'domcontentloaded' });
+  const u = target.url();
+  if (!u.includes(HASH_INVARIANT)) {
+    await target.goto(GOODS_SEARCH_URL, { waitUntil: 'domcontentloaded' });
+  }
   return target;
 }
 
