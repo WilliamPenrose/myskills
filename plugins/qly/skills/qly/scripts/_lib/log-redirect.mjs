@@ -1,21 +1,19 @@
-// Redirect process.stderr to .dev/.logs/<scriptName>.log so long-running
-// batch scripts don't flood the terminal. Stdout (final summary) stays on
-// the terminal. The returned `term` helper writes a line directly to the
-// real terminal stderr (bypassing the redirect) for progress heartbeats.
+// Redirect process.stderr to <logDir>/<scriptName>.log so long-running batch
+// scripts don't flood the terminal. Stdout (final summary) stays on the
+// terminal. The returned `term` helper writes a line directly to the real
+// terminal stderr (bypassing the redirect) for progress heartbeats.
 //
 // Usage at the top of a batch script:
 //   import { redirectStderrToLog } from '../_lib/log-redirect.mjs';
-//   const { term } = redirectStderrToLog('influencer-batch');
+//   const { term } = redirectStderrToLog('influencer-batch', dirs.logs);
 //   term('[batch] starting');             // -> terminal AND log
 //   console.error('[infl] noisy step');   // -> log only
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-export function redirectStderrToLog(scriptName) {
-  const here = path.dirname(fileURLToPath(import.meta.url));   // .dev/scripts/_lib
-  const logDir = path.resolve(here, '..', '..', '.logs');      // .dev/.logs
+export function redirectStderrToLog(scriptName, logDir) {
+  if (!logDir) throw new Error('redirectStderrToLog: logDir is required');
   fs.mkdirSync(logDir, { recursive: true });
   const logPath = path.join(logDir, `${scriptName}.log`);
   const fd = fs.openSync(logPath, 'w');                        // truncate
