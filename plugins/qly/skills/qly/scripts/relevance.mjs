@@ -8,7 +8,9 @@
 
 import process from 'node:process';
 import path from 'node:path';
+import { existsSync, mkdirSync } from 'node:fs';
 
+import ExcelJS from 'exceljs';
 import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import { pipeline, env as xenoEnv } from '@xenova/transformers';
 
@@ -171,7 +173,115 @@ async function runScore(args) {
   }
 }
 
-async function runExport(args)  { throw new Error('export not yet implemented'); }
+const EXPORT_FILTERS = {
+  pending:         "decision_human IS NULL",
+  low_signal_kept: "decision_human IS NULL AND keyword_flag='low_signal' AND decision_auto='kept'",
+  borderline:      "decision_human IS NULL AND decision_auto='kept' AND score_v3 < 0.40",
+  dropped:         "decision_human IS NULL AND decision_auto='dropped'",
+  all:             "1=1",
+};
+
+function todayInShanghai() {
+  const d = new Date(Date.now() + 8 * 3600 * 1000);
+  return d.toISOString().slice(0, 10);
+}
+
+function pickExportPath(tasksDir, explicit) {
+  if (explicit) return path.resolve(explicit);
+  mkdirSync(tasksDir, { recursive: true });
+  const doneDir = path.join(tasksDir, 'done');
+  const date = todayInShanghai();
+  for (let v = 1; v < 1000; v++) {
+    const fname = `${date}-v${v}.xlsx`;
+    const p = path.join(tasksDir, fname);
+    const archived = path.join(doneDir, fname);
+    if (!existsSync(p) && !existsSync(archived)) return p;
+  }
+  throw new Error('Too many versions for today');
+}
+
+async function runExport(args) {
+  const dataDir = resolveDataDir({ cliFlag: args.dataDir });
+  const dirs = dataDirPaths(dataDir);
+  const filter = args.filter ?? 'pending';
+  const where = EXPORT_FILTERS[filter];
+  if (!where) {
+    console.error(`Unknown --filter=${filter}. Options: ${Object.keys(EXPORT_FILTERS).join(', ')}`);
+    process.exit(2);
+  }
+
+  const db = openDb(dirs.db);
+  try {
+    const params = [];
+    let extraWhere = '';
+    if (args.days) {
+      extraWhere = ` AND s.updated_at >= ?`;
+      const cutoff = new Date(Date.now() - args.days * 86400 * 1000 + 8 * 3600 * 1000);
+      params.push(cutoff.toISOString().slice(0, -1) + '+08:00');
+    }
+    const sql = `
+      SELECT
+        ra.keyword, ra.product_url, ra.product_name, ra.shop_name, ra.image_url,
+        ra.decision_auto, ra.decision_human, ra.score_v2, ra.score_neg, ra.score_v3,
+        ra.keyword_flag, ra.human_note, s.qly_detail_url, s.updated_at
+      FROM relevance_annotations ra
+      JOIN sightings s ON s.keyword = ra.keyword AND s.product_url = ra.product_url
+      WHERE ${where}${extraWhere}
+      ORDER BY ra.keyword, ra.score_v3 ASC
+    `;
+    const rows = db.prepare(sql).all(...params);
+    if (!rows.length) {
+      console.error(`[export] no rows match filter=${filter}${args.days ? ` days=${args.days}` : ''}`);
+      return;
+    }
+
+    const outPath = pickExportPath(dirs.tasks, args.out);
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('annotations');
+
+    const headers = ['关键词', '商品链接', '商品名', '店铺', '自动判断', 'score_v3', '人工判断', '结果', '备注', 'keyword_flag'];
+    const headerRow = ws.addRow(headers);
+    headerRow.font = { name: '微软雅黑', size: 11, bold: true };
+
+    for (const r of rows) {
+      const effective = r.decision_human ?? r.decision_auto;
+      const resultCell = effective === 'kept' ? '保留' : effective === 'dropped' ? '丢弃' : '';
+      ws.addRow([
+        r.keyword,
+        r.product_url,
+        r.product_name,
+        r.shop_name ?? '',
+        r.decision_auto === 'kept' ? '保留' : '丢弃',
+        Number(r.score_v3.toFixed(4)),
+        r.decision_human ? (r.decision_human === 'kept' ? '保留' : '丢弃') : '',
+        resultCell,
+        r.human_note ?? '',
+        r.keyword_flag ?? '',
+      ]);
+    }
+
+    const resultColIdx = headers.indexOf('结果') + 1;
+    ws.getColumn(resultColIdx).font = { name: '微软雅黑', size: 11, bold: true, color: { argb: 'FFC00000' } };
+    ws.eachRow((row, rowNum) => {
+      if (rowNum === 1) return;
+      row.eachCell((cell, colNum) => {
+        if (colNum === resultColIdx) return;
+        cell.font = { name: '微软雅黑', size: 11 };
+      });
+    });
+    ws.columns.forEach((col, i) => {
+      const widths = [12, 60, 40, 20, 10, 10, 10, 10, 30, 14];
+      col.width = widths[i] ?? 16;
+    });
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: ws.rowCount, column: headers.length } };
+    ws.views = [{ state: 'frozen', xSplit: 4, ySplit: 1 }];
+
+    await wb.xlsx.writeFile(outPath);
+    console.error(`[export] wrote ${rows.length} rows to ${outPath}`);
+  } finally {
+    db.close();
+  }
+}
 async function runImport(args)  { throw new Error('import not yet implemented'); }
 async function runAudit(args)   { throw new Error('audit not yet implemented'); }
 
