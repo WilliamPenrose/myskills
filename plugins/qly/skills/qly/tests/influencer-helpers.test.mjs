@@ -1,7 +1,39 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { decideConclusion, gateDecision } from '../scripts/_lib/influencer-helpers.mjs';
+import { classifyFailure, decideConclusion, gateDecision } from '../scripts/_lib/influencer-helpers.mjs';
+
+test('classifyFailure: QuotaExceeded prefix -> quota_hit', () => {
+  assert.equal(classifyFailure('QuotaExceeded: 今日访问次数已达上限'), 'quota_hit');
+});
+
+test('classifyFailure: SessionExpired prefix -> session_lost', () => {
+  // All four SessionExpired reason variants from session.mjs.
+  assert.equal(classifyFailure('SessionExpired: redirected to https://qlydata.com/#/login'), 'session_lost');
+  assert.equal(classifyFailure('SessionExpired: 登录状态已失效 dialog visible'), 'session_lost');
+  assert.equal(classifyFailure('SessionExpired: login form rendered (用户名/密码 inputs)'), 'session_lost');
+  assert.equal(classifyFailure('SessionExpired: captcha challenge (安全验证/拼图)'), 'session_lost');
+});
+
+test('classifyFailure: unrelated error -> failed', () => {
+  assert.equal(classifyFailure('InfluencerTabNotFound (nodes=42)'), 'failed');
+  assert.equal(classifyFailure('TimeOptionNotApplied'), 'failed');
+  assert.equal(classifyFailure('Navigation timeout of 30000 ms exceeded'), 'failed');
+});
+
+test('classifyFailure: prefix is case-sensitive (guards against the old bug)', () => {
+  // The original buggy check did msg.includes('session') which would have
+  // returned true for any lowercase 'session' but NOT for 'SessionExpired:'.
+  // Make sure we still don't match lowercase-only substrings.
+  assert.equal(classifyFailure('sessionexpired: redirected'), 'failed');
+  assert.equal(classifyFailure('something about session state'), 'failed');
+});
+
+test('classifyFailure: null/undefined/empty -> failed', () => {
+  assert.equal(classifyFailure(null), 'failed');
+  assert.equal(classifyFailure(undefined), 'failed');
+  assert.equal(classifyFailure(''), 'failed');
+});
 
 test('any dropped -> 不抓-人工 dropped', () => {
   assert.equal(decideConclusion({ nKept: 1, nDropped: 1, gmv7d: 999, minGmv: 1 }), '不抓-人工 dropped');

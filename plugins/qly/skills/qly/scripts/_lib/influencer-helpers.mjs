@@ -1,4 +1,18 @@
 /**
+ * Classify an error thrown by extractInfluencerUids into one of three buckets
+ * used as the influencer_pid_runs.status value. Matches the prefix protocol
+ * documented in products.mjs / influencer-extract.mjs: errors that callers
+ * should treat as fatal (abort the whole loop) are thrown with a
+ * "QuotaExceeded:" or "SessionExpired:" prefix; everything else is "failed".
+ */
+export function classifyFailure(msg) {
+  const s = String(msg ?? '');
+  if (s.startsWith('QuotaExceeded:')) return 'quota_hit';
+  if (s.startsWith('SessionExpired:')) return 'session_lost';
+  return 'failed';
+}
+
+/**
  * Decide the "结论" (conclusion) for one pid in the tracking-list xlsx.
  * Mirrors generate-tracking-list.mjs exactly.
  */

@@ -13,7 +13,7 @@ import ExcelJS from 'exceljs';
 import { resolveDataDir, dataDirPaths } from './_lib/paths.mjs';
 import { openDb } from './_lib/db.mjs';
 import { loadConfig } from './_lib/config.mjs';
-import { decideConclusion, gateDecision, parseDuration } from './_lib/influencer-helpers.mjs';
+import { classifyFailure, decideConclusion, gateDecision, parseDuration } from './_lib/influencer-helpers.mjs';
 import { createQlyRuntime, createSecurePuppeteerPrimitives } from './_lib/bootstrap.mjs';
 import { extractInfluencerUids } from './_lib/influencer-extract.mjs';
 import { redirectStderrToLog } from './_lib/log-redirect.mjs';
@@ -271,13 +271,7 @@ async function runFetch(args) {
       okCount += 1;
     } catch (err) {
       const msg = String(err?.message ?? err);
-      let status = 'failed';
-      // extractInfluencerUids throws errors prefixed with QuotaExceeded: /
-      // SessionExpired: — match the prefix, not loose substrings (the old
-      // msg.includes('session') was case-sensitive and missed every
-      // SessionExpired: ... message, so the loop kept burning pids).
-      if (msg.startsWith('QuotaExceeded:')) status = 'quota_hit';
-      else if (msg.startsWith('SessionExpired:')) status = 'session_lost';
+      const status = classifyFailure(msg);
       try {
         insertRun.run(pid, filterTag, stamp, 0, status, msg.slice(0, 500));
       } catch { /* swallow run-insert errors after rollback */ }
