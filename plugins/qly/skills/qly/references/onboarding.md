@@ -8,6 +8,14 @@ dialogue with the user must be in Chinese, even though the instructions in
 this file are written in English. Adapt phrasing naturally to context, but
 do not skip steps or drop information items.
 
+**Business-language rule.** Never expose raw config keys to the user.
+When asking about defaults or accepting custom values, describe what the
+setting *means in the business* (e.g. "minimum livestream sales for an
+influencer in the past 7 days, in yuan"), not the YAML key name (e.g.
+NOT "min_gmv = 1, unit is 10k CNY"). Internally you map the user's
+business answer back to the YAML key when writing the config file. The
+config keys exist in the codebase only — users should never see them.
+
 ## Detection
 
 Before running any qly command, check `.qlydata/config.yaml`:
@@ -105,26 +113,60 @@ context as needed) and re-ask for a path.
 
 ## Step 4 — Q2: product filter ranges (AskUserQuestion)
 
+Frame this as: "qly's product search can pre-filter by price and by how
+many units the product has sold in livestreams. This helps avoid pulling
+in either ultra-cheap micro-items or rare items with almost no sales."
+
+Default to keep products whose unit price is between **5 and 500 yuan**
+and whose livestream-sold quantity is between **1 and 100,000 units**.
+
 Ask via `AskUserQuestion` with three options:
 
-1. "Use defaults" — price 5–500 CNY, livestream sales 1–100000 units.
-   Mark as "(Recommended)".
-2. "Change price range"
-3. "Change livestream sales range"
+1. "Use the defaults (price 5–500 yuan, livestream sales 1–100,000
+   units)" — mark as "(Recommended)"
+2. "Set a different price range"
+3. "Set a different livestream-sales range"
 
-If they pick a "change" option, follow up with free-form input asking for
-the new `min` and `max`.
+If they pick option 2 or 3, follow up with free-form input asking for
+the new minimum and maximum (in yuan / in units respectively). When
+writing the config, translate these to `filters.price: [min, max]` and
+`filters.live_sales: [min, max]` in `config.yaml`. The user never sees
+the YAML key names.
 
 ## Step 5 — Q3: influencer thresholds (AskUserQuestion)
 
+Frame this as: "for each kept product, qly tells us which influencers
+have livestream-sold it recently. We want to focus on the ones who
+actually moved meaningful volume — small-volume noise is usually not
+worth chasing."
+
+Two business-language settings:
+
+- **Minimum livestream sales per influencer** in yuan, over the recent
+  window. Default: 10,000 yuan (≈ 1万元). Only influencers whose
+  past-window livestream GMV for this specific product reached this
+  amount are kept.
+- **Recent window** in days. Default: past 7 days.
+
 Ask via `AskUserQuestion` with two options:
 
-1. "Use defaults" — `min_gmv = 1` (10k CNY), window 7 days.
-   Mark as "(Recommended)".
-2. "Customize"
+1. "Use the defaults (at least 10,000 yuan in livestream sales in the
+   past 7 days)" — mark as "(Recommended)"
+2. "Set different thresholds"
 
-For "customize", ask for `min_gmv` (numeric, in units of 10k CNY) and
-`window_days` (integer).
+For option 2, ask in plain language:
+
+- "影响者过去多少天内卖了多少元，才算值得跟踪？" — collect a yuan
+  amount and a day count.
+
+When writing the config, convert and write as:
+
+- `influencer.min_gmv` in units of 10k yuan (so 10,000 yuan → `1`)
+- `influencer.window_days` as integer days
+
+The user supplies plain yuan and plain days. The skill does the unit
+conversion silently. Never tell the user that `min_gmv` is in "wàn"
+or that the key name is `min_gmv` / `window_days`.
 
 ## Step 6 — write the config files
 
