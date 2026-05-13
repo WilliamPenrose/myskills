@@ -18,6 +18,39 @@ import { cascadeConfirm } from './cascade-confirm.mjs';
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Cold-start guard: when products.mjs (or ensureGoodsSearchTab) navigates
+// to goods_search, page.goto resolves on domcontentloaded — the Vue app
+// hasn't mounted, so the price/sales/search controls aren't in AX yet.
+// First action then trips TargetsNotFound, diagnoseAndRethrow runs, and
+// the keyword gets recorded as a spurious failure. Poll until the three
+// filter-bar anchors are all present before continuing.
+//
+// Anchors must agree with setPriceRange / setLivestreamSales / searchKeyword:
+//   - button "平均到手价" with uid < 1500
+//   - button "销量"       with uid < 1500
+//   - textbox "请输入商品关键词或商品链接"
+export async function waitForFilterBar(primitives, {
+  timeoutMs = 15000,
+  pollMs = 400,
+  log = (m) => console.error(`[wait-filter-bar] ${m}`),
+} = {}) {
+  const TEXTBOX_NAME = '请输入商品关键词或商品链接';
+  const deadline = Date.now() + timeoutMs;
+  let lastMissing = null;
+  while (Date.now() < deadline) {
+    const sn = await primitives.takeSnapshot();
+    const nodes = [...sn.idToNode.values()];
+    const hasPrice = nodes.some((n) => n.role === 'button' && n.name === '平均到手价' && Number(n.uid) < 1500);
+    const hasSales = nodes.some((n) => n.role === 'button' && n.name === '销量' && Number(n.uid) < 1500);
+    const hasSearch = nodes.some((n) => n.role === 'textbox' && n.name === TEXTBOX_NAME);
+    if (hasPrice && hasSales && hasSearch) return { success: true };
+    lastMissing = { hasPrice, hasSales, hasSearch };
+    await sleep(pollMs);
+  }
+  log(`timed out after ${timeoutMs}ms missing=${JSON.stringify(lastMissing)}`);
+  return { success: false, reason: 'FilterBarNotRendered', missing: lastMissing };
+}
+
 export function lowestUidByPredicate(idToNode, predicate) {
   let lowest = null;
   for (const n of idToNode.values()) {

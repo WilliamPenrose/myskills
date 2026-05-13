@@ -128,6 +128,24 @@ No separate "sanity check" tool ships with the skill — query the DB directly a
 - Don't read `sightings` directly when deciding "should we chase this product" — always go through `relevance_annotations.decision_effective = COALESCE(decision_human, decision_auto)`
 - Don't treat `sightings.raw_json` as time-series data — it's a latest-snapshot, overwritten on each UPSERT
 
+## Inspecting the live qly page
+
+When you need to see what's actually on the page (UI drift, surprise
+dialog, captcha state, hunting for a renamed selector) use:
+
+```bash
+node scripts/probe.mjs                          # dump active qly tab's snapshot + summary
+node scripts/probe.mjs --url <url>              # navigate first
+node scripts/probe.mjs --name <slug>            # control output filename
+node scripts/probe.mjs --screenshot             # also save PNG
+```
+
+Read-only: does not click, type, or assert session. Outputs JSON
+summary to stdout (`url`, `title`, `nodeCount`, hit list of known
+signals like `dialog` / `captcha_title` / `quota_banner`) and a full
+AX snapshot to `.qlydata/snapshots/<slug>-<timestamp>.json`. Use this
+before writing a new selector — don't grep blindly.
+
 ## When qly's UI drifts
 
 See `references/repairing-scrapers.md` for the diagnosis workflow.

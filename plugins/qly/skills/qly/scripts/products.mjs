@@ -24,6 +24,7 @@ import {
   setLivestreamSales,
   searchKeyword,
   triggerExport,
+  waitForFilterBar,
 } from './_lib/actions.mjs';
 import { assertSession, checkSessionDeep } from './_lib/session.mjs';
 import { redirectStderrToLog } from './_lib/log-redirect.mjs';
@@ -277,6 +278,15 @@ async function main() {
   // is invoked lazily on any action failure (see diagnoseAndRethrow).
   await assertSession({ page });
 
+  // ensureGoodsSearchTab may have just navigated; wait for the Vue app to
+  // mount the filter bar before any action. Re-navigation inside the loop
+  // has its own wait below.
+  const initialWait = await waitForFilterBar(primitives);
+  if (!initialWait.success) {
+    term(`[products] filter bar did not render after initial load: ${JSON.stringify(initialWait.missing)}`);
+    process.exit(1);
+  }
+
   for (const k of todo) {
     term(`\n[products] >>> ${k.key_word}`);
     try {
@@ -291,6 +301,7 @@ async function main() {
           term(`[products] not on search page (url=${page.url()}) — re-navigating`);
           await page.goto(GOODS_SEARCH_URL, { waitUntil: 'domcontentloaded' });
           await assertSession({ page });
+          requireSuccess(await waitForFilterBar(primitives), 'wait-filter-bar', k.key_word);
         }
         requireSuccess(await setPriceRange(primitives, { min: price.min, max: price.max }), 'price', k.key_word);
         requireSuccess(await setLivestreamSales(primitives, { min: sales.min, max: sales.max }), 'sales', k.key_word);

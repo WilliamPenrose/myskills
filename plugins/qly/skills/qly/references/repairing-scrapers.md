@@ -16,7 +16,7 @@ This skill drives qlydata.com's UI directly (no API). qly occasionally tweaks th
 ## Diagnosis workflow
 
 1. **Reproduce manually**: open chrome with site-use's profile, navigate to qlydata, do the action by hand. Does qly itself work?
-2. **Take a fresh DOM snapshot**: write a one-off probe that calls `primitives.takeSnapshot()` and dump to JSON. Compare to the AX/role names actions.mjs expects.
+2. **Take a fresh DOM snapshot**: run `node scripts/probe.mjs` (or `--url <url>` to navigate first). Dumps the full AX snapshot to `.qlydata/snapshots/` and prints a summary of which session signals (dialog / login / captcha / quota banner) currently match. Compare the snapshot against the AX/role names actions.mjs expects.
 3. **Find the changed selector**: AX-based selectors (uid lookups by role+name) tend to break when qly renames a button or wraps it in a new container. Update the lookup in actions.mjs.
 4. **For XHR drift**: open chrome devtools network tab while running the action manually. Look for the URL pattern `_lib/influencer-extract.mjs` watches (`/common/exist/live`). If qly switched to a different endpoint, update the pattern.
 
