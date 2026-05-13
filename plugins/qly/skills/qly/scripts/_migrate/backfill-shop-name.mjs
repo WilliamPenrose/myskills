@@ -1,13 +1,13 @@
-// One-time backfill for shop_name.
+// One-time backfill for sightings columns that the rewritten importer
+// failed to populate.
 //
-// The original products.mjs importer only looked for r['店铺'] / r['店铺名'],
-// but qlydata's xlsx export actually uses 小店名称. Every row landed in
-// sightings since the rewrite has shop_name = NULL. raw_json still holds the
-// original row, so we can recover the value without re-scraping.
+// 1. shop_name: importer looked for r['店铺'] / r['店铺名'], but qlydata's
+//    xlsx column is 小店名称. raw_json still has the value, so we can
+//    recover without re-scraping.
+// 2. qly_detail_url: importer looked for r['详情链接'], which qlydata's
+//    xlsx doesn't have. Derive it from product_url's id (= qly's pId).
 //
-// This script:
-//   1. UPDATE sightings.shop_name from raw_json['小店名称'] where missing.
-//   2. UPDATE relevance_annotations.shop_name from the now-correct sightings.
+// Also propagates the recovered shop_name into relevance_annotations.
 //
 // Usage:
 //   node backfill-shop-name.mjs                      use default data dir
@@ -17,6 +17,7 @@
 import process from 'node:process';
 import { resolveDataDir, dataDirPaths } from '../_lib/paths.mjs';
 import { openDb } from '../_lib/db.mjs';
+import { buildQlyDetailUrl } from '../_lib/detail-url.mjs';
 
 function parseArgs(argv) {
   const out = { dataDir: undefined, dryRun: false };
@@ -74,6 +75,36 @@ function main() {
     throw err;
   }
   console.log(`[backfill] sightings: filled=${sFilled} no_data_in_raw=${sNoData}`);
+
+  // qly_detail_url derived from product_url's id.
+  const detailTargets = db.prepare(`
+    SELECT keyword, product_url
+    FROM sightings
+    WHERE qly_detail_url IS NULL OR qly_detail_url = ''
+  `).all();
+
+  console.log(`[backfill] sightings rows missing qly_detail_url: ${detailTargets.length}`);
+
+  const updateDetail = db.prepare(
+    'UPDATE sightings SET qly_detail_url = ? WHERE keyword = ? AND product_url = ?'
+  );
+
+  let dFilled = 0;
+  let dNoId = 0;
+  if (!args.dryRun) db.exec('BEGIN');
+  try {
+    for (const row of detailTargets) {
+      const url = buildQlyDetailUrl(row.product_url);
+      if (!url) { dNoId += 1; continue; }
+      if (!args.dryRun) updateDetail.run(url, row.keyword, row.product_url);
+      dFilled += 1;
+    }
+    if (!args.dryRun) db.exec('COMMIT');
+  } catch (err) {
+    if (!args.dryRun) db.exec('ROLLBACK');
+    throw err;
+  }
+  console.log(`[backfill] qly_detail_url: filled=${dFilled} no_id_in_url=${dNoId}`);
 
   // Propagate to relevance_annotations.
   const raTargets = db.prepare(`

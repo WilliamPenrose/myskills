@@ -28,6 +28,7 @@ import {
 } from './_lib/actions.mjs';
 import { assertSession, checkSessionDeep } from './_lib/session.mjs';
 import { redirectStderrToLog } from './_lib/log-redirect.mjs';
+import { buildQlyDetailUrl } from './_lib/detail-url.mjs';
 
 const TARGET_HOST = 'qlydata.com';
 const GOODS_SEARCH_URL = 'https://qlydata.com/#/market_rank/goods/goods_search';
@@ -145,7 +146,9 @@ function upsertSightings(db, keyword, rows) {
       // legacy aliases kept for forward-compat in case qly renames columns.
       const productName = r['商品名称'] ?? r['商品名'] ?? '';
       const shopName = r['小店名称'] ?? r['店铺'] ?? r['店铺名'] ?? null;
-      const detailUrl = r['详情链接'] ?? r['qly_detail_url'] ?? '';
+      // qlydata's xlsx has no detail-url column; derive it from product_url's
+      // id, which maps 1:1 to qly's pId (see _lib/detail-url.mjs).
+      const detailUrl = buildQlyDetailUrl(productUrl);
       const rawJson = JSON.stringify(r);
       const exists = checkExisting.get(keyword, productUrl);
       stmt.run(keyword, productUrl, now, now, productName, shopName, detailUrl || null, rawJson);
