@@ -69,6 +69,7 @@ Each step is resumable: quota hit / session lost → exit 1 cleanly, re-run same
 CLI reference:
 
 ```bash
+node scripts/check-keywords.mjs <path>                        # validate a keyword xlsx/csv, print JSON summary
 node scripts/products.mjs                                     # everything in keywords_source where is_track=1
 node scripts/products.mjs --keywords-xlsx <path>              # temp source override
 node scripts/products.mjs --keywords <keyword>                # ad-hoc single keyword (bypass xlsx)

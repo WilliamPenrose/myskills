@@ -47,28 +47,49 @@ async function parseXlsx(filePath) {
   return rows;
 }
 
-/**
- * Load the business keyword source (csv or xlsx).
- * Returns array of rows with is_track == '1', each row is the full parsed object.
- * Throws if required columns key_word or is_track are missing.
- */
-export async function loadKeywords(filePath) {
+async function parseRaw(filePath) {
   const ext = path.extname(filePath).toLowerCase();
-  let rows;
-  if (ext === '.csv') {
-    rows = parseCsv(readFileSync(filePath, 'utf8'));
-  } else if (ext === '.xlsx') {
-    rows = await parseXlsx(filePath);
-  } else {
-    throw new Error(`unsupported keyword source format: ${ext} (need .csv or .xlsx)`);
-  }
-  if (!rows.length) throw new Error(`keyword source ${filePath} is empty`);
+  if (ext === '.csv') return parseCsv(readFileSync(filePath, 'utf8'));
+  if (ext === '.xlsx') return parseXlsx(filePath);
+  throw new Error(`unsupported keyword source format: ${ext} (need .csv or .xlsx)`);
+}
 
+function validateColumns(rows, filePath) {
+  if (!rows.length) throw new Error(`keyword source ${filePath} is empty`);
   const required = ['key_word', 'is_track'];
   for (const col of required) {
     if (!(col in rows[0])) {
       throw new Error(`keyword source ${filePath} missing required column "${col}". Found: ${Object.keys(rows[0]).join(', ')}`);
     }
   }
+}
+
+/**
+ * Load the business keyword source (csv or xlsx).
+ * Returns array of rows with is_track == '1', each row is the full parsed object.
+ * Throws if required columns key_word or is_track are missing.
+ */
+export async function loadKeywords(filePath) {
+  const rows = await parseRaw(filePath);
+  validateColumns(rows, filePath);
   return rows.filter((r) => String(r.is_track).trim() === '1');
+}
+
+/**
+ * Inspect a keyword source file without filtering. Returns a summary
+ * suitable for onboarding-time validation and preview.
+ *
+ * Throws the same errors as loadKeywords for unsupported format / empty
+ * file / missing required columns.
+ */
+export async function inspectKeywords(filePath) {
+  const rows = await parseRaw(filePath);
+  validateColumns(rows, filePath);
+  const active = rows.filter((r) => String(r.is_track).trim() === '1');
+  return {
+    total: rows.length,
+    active: active.length,
+    activeSample: active.slice(0, 5).map((r) => r.key_word),
+    columns: Object.keys(rows[0]),
+  };
 }

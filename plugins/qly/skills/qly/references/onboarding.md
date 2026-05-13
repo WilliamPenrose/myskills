@@ -66,25 +66,42 @@ Explain in the same message:
     history, just not fetched on this run)
 - Other columns (id, owner, notes, etc.) are ignored.
 
-Validate the file path with `existsSync`, then open with ExcelJS (xlsx)
-or simple line parsing (csv).
+Validate the file by running, from the skill directory:
 
-Failure modes:
+```
+node scripts/check-keywords.mjs <path>
+```
 
-- File does not exist → ask the user to recheck the path. Common
-  locations are `D:\download\` or the project root.
-- `key_word` column missing → report which columns ARE present and ask
-  the user to rename a column or supply a different file.
-- `is_track` column missing → same as above.
-- File is empty → ask the user to fill in at least one row.
+This is the single source of truth for keyword-file validation — the
+same logic that `products.mjs` uses at scrape time. Do NOT re-implement
+the parsing in ad-hoc inline code.
 
-On success, show:
+On exit 0, the script prints a JSON summary on stdout:
 
-- Total row count
-- Count where `is_track = 1`
-- The first 5 active keywords as a sanity preview
+```json
+{
+  "total": 101,
+  "active": 20,
+  "activeSample": ["...", "...", "...", "...", "..."],
+  "columns": ["id", "key_word", "is_track", "..."]
+}
+```
 
-Then ask "看起来对吗?" If the user says no, abort and let them re-provide.
+Show the user `total`, `active`, and `activeSample` in a short Chinese
+summary, then ask "看起来对吗?" If they say no, abort and let them
+re-provide.
+
+On non-zero exit, the script writes a clear message to stderr:
+
+- "File not found: ..." → ask the user to recheck the path.
+- "unsupported keyword source format: ..." → file must be .xlsx or .csv.
+- "missing required column ..." → message also lists the columns that
+  ARE present; ask the user to rename or supply a different file.
+- "Cannot find module 'exceljs'" or similar → skill dependencies are
+  not installed; run `npm install` in the skill directory and retry.
+
+Forward the stderr message to the user verbatim (translated to Chinese
+context as needed) and re-ask for a path.
 
 ## Step 4 — Q2: product filter ranges (AskUserQuestion)
 
