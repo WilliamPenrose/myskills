@@ -245,6 +245,8 @@ async function runFetch(args) {
 
   let okCount = 0;
   let failCount = 0;
+  const startedAt = Date.now();
+  const PROGRESS_EVERY = 50;
 
   for (let i = 0; i < work.length; i++) {
     const pid = work[i];
@@ -286,10 +288,19 @@ async function runFetch(args) {
         break;
       }
     }
+
+    const done = i + 1;
+    if (done % PROGRESS_EVERY === 0 && done < work.length) {
+      const elapsedMin = (Date.now() - startedAt) / 60000;
+      const rate = done / elapsedMin;
+      const etaMin = (work.length - done) / rate;
+      term(`[fetch] progress ${done}/${work.length} ok=${okCount} fail=${failCount} rate=${rate.toFixed(1)}/min elapsed=${elapsedMin.toFixed(1)}min eta=${etaMin.toFixed(1)}min`);
+    }
   }
 
+  const totalMin = (Date.now() - startedAt) / 60000;
   db.close();
-  term(`\n[fetch] done: ok=${okCount} fail=${failCount}`);
+  term(`\n[fetch] done: ok=${okCount} fail=${failCount} total=${work.length} elapsed=${totalMin.toFixed(1)}min`);
 }
 
 function parseArgs(argv) {

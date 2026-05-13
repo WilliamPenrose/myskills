@@ -10,7 +10,7 @@ Drive qlydata.com to harvest products, score relevance against a local Chinese e
 ## Prerequisites
 
 - `npm install` already ran in this skill directory (deps: `@site-use/runtime ^0.1.1`, `@xenova/transformers`, `exceljs`, `js-yaml`, `undici`)
-- First-time only: user has logged into qlydata.com via QR scan in a site-use chrome instance. Cookies persist in the chrome profile; subsequent runs auto-launch chrome and reuse the session.
+- First-time only: user has logged into qlydata.com with their own account credentials in a site-use chrome instance. Cookies persist in the chrome profile; subsequent runs auto-launch chrome and reuse the session.
 - `QLY_DATA_DIR` or a discoverable `.qlydata/` directory (see below)
 
 ## How chrome is managed
@@ -43,23 +43,24 @@ Contents:
 
 The keyword business xlsx/csv lives **outside** `.qlydata/`. The skill reads it via `config.yaml.keywords_source.path`. Required columns: `key_word` (search term) and `is_track` (1 = track, 0 = pause). Other columns are ignored.
 
-## First-time setup
+## First-run onboarding
 
-When `.qlydata/config.yaml` or `.qlydata/relevance.yaml` is missing, the scripts exit with `CONFIG_MISSING` and a message. Walk the user through:
+Before running any qly command, check whether `.qlydata/config.yaml` exists:
 
-1. Ask for the path to their keyword xlsx/csv. Verify it has `key_word` and `is_track` columns. Write `.qlydata/config.yaml.keywords_source.path`.
-2. Confirm filter ranges (default: price [5, 500], live_sales [1, 100000]). Write `.qlydata/config.yaml.filters`.
-3. Accept defaults for `influencer.min_gmv` (1) and `influencer.window_days` (7).
-4. Copy `relevance.example.yaml` to `.qlydata/relevance.yaml` (defaults are usually fine). Leave `per_keyword` empty — fill in `negative_extra` only after `relevance score` shows specific keywords with noisy recall.
+- **Missing** → enter full first-run onboarding. Follow the dialogue script in `references/onboarding.md` exactly. Do not skip steps and do not paraphrase the structure — the analyst-facing experience depends on consistency. Dialogue is delivered to the user in Chinese; the reference is in English.
+- **Exists, but DB has no `sightings` rows** → light onboarding (skip Q1–Q4, jump to "first run plan" in `references/onboarding.md`).
+- **Exists with data** → no onboarding; proceed with the workflow below.
+
+The scripts themselves still exit with `CONFIG_MISSING` if invoked directly when configs are absent — onboarding only triggers when the user enters the skill, not on raw `node scripts/*.mjs` invocations.
 
 ## Workflow (weekly)
 
 ```
 ① products                                                 # drive qly + UPSERT sightings
 ② relevance score                                          # auto-label kept/dropped + low_signal flag
-③ relevance export → reviewer xlsx                         # reviewer (你 / 唐 / 赵) edits 结果 in Excel
+③ relevance export → reviewer xlsx                         # reviewer edits the decision column in Excel
    relevance import --in .qlydata/tasks/YYYY-MM-DD-v1.xlsx # apply review back to DB
-④ influencer plan → tracking-{date}.xlsx                   # reviewer can override 结论 column
+④ influencer plan → tracking-{date}.xlsx                   # reviewer can override the conclusion column
 ⑤ influencer fetch --from-xlsx .qlydata/tasks/tracking-YYYY-MM-DD.xlsx
 ```
 
@@ -68,24 +69,24 @@ Each step is resumable: quota hit / session lost → exit 1 cleanly, re-run same
 CLI reference:
 
 ```bash
-node products.mjs                                     # everything in keywords_source where is_track=1
-node products.mjs --keywords-xlsx <path>              # temp source override
-node products.mjs --keywords 自然拼读                   # ad-hoc single keyword (bypass xlsx)
-node products.mjs --rescrape 自然拼读                   # delete prior exports for keyword, re-scrape
+node scripts/products.mjs                                     # everything in keywords_source where is_track=1
+node scripts/products.mjs --keywords-xlsx <path>              # temp source override
+node scripts/products.mjs --keywords <keyword>                # ad-hoc single keyword (bypass xlsx)
+node scripts/products.mjs --rescrape <keyword>                # delete prior exports for keyword, re-scrape
 
-node relevance.mjs score [--keyword <k>]
-node relevance.mjs export [--filter pending|low_signal_kept|borderline|dropped|all] [--days N]
-node relevance.mjs import --in <xlsx> [--dry-run]
-node relevance.mjs audit                              # keyword × stage summary
+node scripts/relevance.mjs score [--keyword <k>]
+node scripts/relevance.mjs export [--filter pending|low_signal_kept|borderline|dropped|all] [--days N]
+node scripts/relevance.mjs import --in <xlsx> [--dry-run]
+node scripts/relevance.mjs audit                              # keyword x stage summary
 
-node influencer.mjs plan [--min-gmv N]
-node influencer.mjs fetch --from-xlsx <tracking.xlsx> [--time 7] [--type live] [--window-days 7] [--retry 1h] [--force] [--limit N] [--dry-run]
-node influencer.mjs fetch --pids <csv>
+node scripts/influencer.mjs plan [--min-gmv N]
+node scripts/influencer.mjs fetch --from-xlsx <tracking.xlsx> [--time 7] [--type live] [--window-days 7] [--retry 1h] [--force] [--limit N] [--dry-run]
+node scripts/influencer.mjs fetch --pids <csv>
 ```
 
 ## Daily quota and recovery
 
-qly's brand-version cap is ~920 requests/day. When the banner "今日访问次数已达上限" appears, scripts exit 1 with `QUOTA HIT` in the log. Resume next day by re-running the same command:
+qly's brand-version cap is ~920 requests/day. When qly's daily-limit banner appears, scripts exit 1 with `QUOTA HIT` in the log. Resume next day by re-running the same command:
 
 - `products` skips keywords with any prior xlsx in `exports/` (filename-match, not date-aware). To re-scrape a keyword, delete its xlsx or use `--rescrape`.
 - `influencer fetch` skips pids whose last `ok` run is within `--window-days`. Failed pids are skipped unless you pass `--retry <duration>` (e.g. `--retry 1h`).
@@ -102,10 +103,10 @@ Reviewer focus order: filter `low_signal_kept` first (most likely false positive
 
 For non-tech reviewers:
 
-- Font: 微软雅黑 11pt
+- Font: Microsoft YaHei 11pt
 - AutoFilter on all columns
 - Freeze: header row + first 4 columns
-- Editable column (`结果` for relevance, `结论` for tracking): red bold (`#C00000`)
+- Editable column (decision column for relevance, conclusion column for tracking): red bold (`#C00000`)
 - Sort: `score_v3` ascending (riskiest at top)
 
 ## Tag tuning
@@ -114,7 +115,7 @@ When `relevance score` flags a keyword as `low_signal`, or when `audit` shows pe
 
 1. Run `relevance audit` to see the keyword's `v2_mean` / `v3_min` / `n_dropped`
 2. Browse the keyword's products: `sqlite3 .qlydata/qlydata.db "SELECT product_name FROM sightings WHERE keyword='X' LIMIT 20"`
-3. Identify confusing homonyms (e.g. "小王者" pulls in "王者荣耀" gear) and add to `relevance.yaml.per_keyword.X.negative_extra`
+3. Identify confusing homonyms (where the search term overlaps with a popular unrelated product name) and add to `relevance.yaml.per_keyword.X.negative_extra`
 4. Re-run `relevance score --keyword X` to verify
 
 No separate "sanity check" tool ships with the skill — query the DB directly and eyeball.
