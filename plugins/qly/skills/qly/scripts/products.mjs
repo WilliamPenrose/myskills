@@ -188,6 +188,23 @@ function requireSuccess(result, step, keyword) {
 
 const QUOTA_BANNER = '今日访问次数已达上限';
 
+// Handle SessionExpired / QuotaExceeded messages that came back from
+// diagnoseAndRethrow. Always fatal (exit 1). For anything else, returns
+// without doing anything so the caller can keep its own error path.
+function handleSessionOrQuota(msg, db, term) {
+  if (msg.startsWith('SessionExpired:')) {
+    term(`[products] ABORT: session expired — ${msg.slice('SessionExpired:'.length).trim()}`);
+    term('[products] Log in qlydata.com in chrome and re-run.');
+    db.close();
+    process.exit(1);
+  }
+  if (msg.startsWith('QuotaExceeded:')) {
+    term('[products] ABORT: daily quota hit — re-run tomorrow.');
+    db.close();
+    process.exit(1);
+  }
+}
+
 // On any action failure, take a fresh snapshot and disambiguate:
 //   - SessionExpired (URL / dialog / login form / captcha — see session.mjs)
 //   - QuotaExceeded (qly's daily-cap banner present anywhere on the page)
@@ -280,16 +297,32 @@ async function main() {
   });
 
   // Cheap URL-only session gate before the first action. Deep diagnosis
-  // is invoked lazily on any action failure (see diagnoseAndRethrow).
+  // (captcha / login form / dialog) is invoked lazily on any action
+  // failure below — qly's Vue router redirects unauthenticated users
+  // asynchronously, so a URL-only check right after goto can pass even
+  // when the page is about to flip to /#/login.
   await assertSession({ page });
 
   // ensureGoodsSearchTab may have just navigated; wait for the Vue app to
   // mount the filter bar before any action. Re-navigation inside the loop
-  // has its own wait below.
+  // has its own wait below. If it never mounts, route through the same
+  // diagnosis as in-loop failures so a logged-out session / captcha /
+  // quota banner produces a precise ABORT message instead of the opaque
+  // "filter bar did not render".
   const initialWait = await waitForFilterBar(primitives);
   if (!initialWait.success) {
-    term(`[products] filter bar did not render after initial load: ${JSON.stringify(initialWait.missing)}`);
-    process.exit(1);
+    try {
+      await diagnoseAndRethrow(
+        new Error(`filter bar did not render: ${JSON.stringify(initialWait.missing)}`),
+        { page, primitives },
+      );
+    } catch (err) {
+      const msg = String(err?.message ?? err);
+      handleSessionOrQuota(msg, db, term);
+      term(`[products] initial setup FAILED: ${msg}`);
+      db.close();
+      process.exit(1);
+    }
   }
 
   for (const k of todo) {
@@ -324,17 +357,7 @@ async function main() {
       }
     } catch (err) {
       const msg = String(err?.message ?? err);
-      if (msg.startsWith('SessionExpired:')) {
-        term(`[products] ABORT: session expired — ${msg.slice('SessionExpired:'.length).trim()}`);
-        term(`[products] Log in qlydata.com in chrome and re-run.`);
-        db.close();
-        process.exit(1);
-      }
-      if (msg.startsWith('QuotaExceeded:')) {
-        term(`[products] ABORT: daily quota hit — re-run tomorrow.`);
-        db.close();
-        process.exit(1);
-      }
+      handleSessionOrQuota(msg, db, term);
       term(`[products] ${k.key_word} FAILED: ${msg}`);
     }
   }

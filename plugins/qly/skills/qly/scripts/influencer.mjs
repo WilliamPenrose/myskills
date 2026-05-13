@@ -4,6 +4,7 @@
 //   node influencer.mjs plan [--min-gmv N]
 //   node influencer.mjs fetch --from-xlsx <path> [--time 7] [--type live] [--window-days 7] [--retry 1h] [--force] [--limit N] [--dry-run]
 //   node influencer.mjs fetch --pids <csv>
+//   node influencer.mjs export [--out <xlsx>]
 
 import process from 'node:process';
 import path from 'node:path';
@@ -317,6 +318,7 @@ function parseArgs(argv) {
     else if (a === '--min-gmv')    out.minGmv = Number(argv[++i]);
     else if (a === '--force')      out.force = true;
     else if (a === '--dry-run')    out.dryRun = true;
+    else if (a === '--out')        out.out = argv[++i];
   }
   out.time = out.time ?? 7;
   out.type = out.type ?? 'live';
@@ -327,12 +329,91 @@ function parseArgs(argv) {
   return out;
 }
 
-const SUBCOMMANDS = { plan: runPlan, fetch: runFetch };
+// Join influencer_sightings -> sightings (via pid extracted from
+// qly_detail_url) -> aggregate keywords per pid. One row per (pid, uid).
+async function runExport(args) {
+  const dataDir = resolveDataDir({ cliFlag: args.dataDir });
+  const dirs = dataDirPaths(dataDir);
+  const db = openDb(dirs.db);
+  try {
+    const sql = `
+      WITH pid_meta AS (
+        SELECT
+          SUBSTR(s.qly_detail_url, INSTR(s.qly_detail_url, 'pId=') + 4) AS pid,
+          GROUP_CONCAT(DISTINCT s.keyword) AS keywords,
+          MAX(s.product_name) AS product_name,
+          MAX(s.shop_name)    AS shop_name
+        FROM sightings s
+        WHERE s.qly_detail_url IS NOT NULL
+          AND INSTR(s.qly_detail_url, 'pId=') > 0
+        GROUP BY pid
+      )
+      SELECT
+        m.pid, m.keywords, m.product_name, m.shop_name,
+        i.uid, i.observed_at, i.updated_at
+      FROM influencer_sightings i
+      JOIN pid_meta m ON m.pid = i.pid
+      ORDER BY m.product_name ASC, i.uid ASC
+    `;
+    const rows = db.prepare(sql).all();
+    if (!rows.length) {
+      console.error('[export] no influencer_sightings to export — run fetch first');
+      return;
+    }
+
+    const outPath = args.out
+      ? path.resolve(args.out)
+      : pickInfluencerExportPath(dirs.tasks, todayShanghai());
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('influencers');
+    const headers = ['关键词', '商品名', '店铺', 'pid', '达人 uid', 'observed_at', 'updated_at'];
+    const headerRow = ws.addRow(headers);
+    headerRow.font = { name: '微软雅黑', size: 11, bold: true };
+    for (const r of rows) {
+      ws.addRow([
+        r.keywords ?? '',
+        r.product_name ?? '',
+        r.shop_name ?? '',
+        r.pid,
+        r.uid,
+        r.observed_at ?? '',
+        r.updated_at ?? '',
+      ]);
+    }
+    ws.eachRow((row, n) => {
+      if (n === 1) return;
+      row.eachCell((cell) => { cell.font = { name: '微软雅黑', size: 11 }; });
+    });
+    const widths = [30, 40, 20, 22, 22, 20, 20];
+    ws.columns.forEach((col, i) => { col.width = widths[i] ?? 16; });
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: ws.rowCount, column: headers.length } };
+    ws.views = [{ state: 'frozen', xSplit: 4, ySplit: 1 }];
+
+    await wb.xlsx.writeFile(outPath);
+    console.error(`[export] wrote ${rows.length} rows to ${outPath}`);
+  } finally {
+    db.close();
+  }
+}
+
+function pickInfluencerExportPath(tasksDir, date) {
+  mkdirSync(tasksDir, { recursive: true });
+  const base = path.join(tasksDir, `influencers-${date}.xlsx`);
+  if (!existsSync(base)) return base;
+  for (let v = 2; v < 1000; v++) {
+    const p = path.join(tasksDir, `influencers-${date}-v${v}.xlsx`);
+    if (!existsSync(p)) return p;
+  }
+  throw new Error('Too many versions for today');
+}
+
+const SUBCOMMANDS = { plan: runPlan, fetch: runFetch, export: runExport };
 
 async function main() {
   const args = parseArgs(process.argv);
   if (!args.sub || !SUBCOMMANDS[args.sub]) {
-    console.error(`Usage: node influencer.mjs <plan|fetch> [...flags]`);
+    console.error(`Usage: node influencer.mjs <plan|fetch|export> [...flags]`);
     process.exit(2);
   }
   await SUBCOMMANDS[args.sub](args);

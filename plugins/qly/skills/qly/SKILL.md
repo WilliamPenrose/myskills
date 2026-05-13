@@ -83,6 +83,7 @@ node scripts/relevance.mjs audit                              # keyword x stage 
 node scripts/influencer.mjs plan [--min-gmv N]
 node scripts/influencer.mjs fetch --from-xlsx <tracking.xlsx> [--time 7] [--type live] [--window-days 7] [--retry 1h] [--force] [--limit N] [--dry-run]
 node scripts/influencer.mjs fetch --pids <csv>
+node scripts/influencer.mjs export [--out <xlsx>]              # one row per (pid, uid): keywords, product_name, shop_name, pid, uid
 ```
 
 ## Daily quota and recovery

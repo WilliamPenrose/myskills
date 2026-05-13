@@ -12,9 +12,9 @@ do not skip steps or drop information items.
 When asking about defaults or accepting custom values, describe what the
 setting *means in the business* (e.g. "minimum livestream sales for an
 influencer in the past 7 days, in yuan"), not the YAML key name (e.g.
-NOT "min_gmv = 1, unit is 10k CNY"). Internally you map the user's
-business answer back to the YAML key when writing the config file. The
-config keys exist in the codebase only — users should never see them.
+NOT "min_gmv = 1"). Internally you map the user's business answer back
+to the YAML key when writing the config file. The config keys exist in
+the codebase only — users should never see them.
 
 ## Detection
 
@@ -143,30 +143,31 @@ worth chasing."
 Two business-language settings:
 
 - **Minimum livestream sales per influencer** in yuan, over the recent
-  window. Default: 10,000 yuan (≈ 1万元). Only influencers whose
-  past-window livestream GMV for this specific product reached this
-  amount are kept.
+  window. Default: **1 yuan** — i.e. effectively no filter; we keep
+  every influencer who livestream-sold the product at all. Reviewers
+  raise this threshold manually in the tracking xlsx if they want to
+  trim noise.
 - **Recent window** in days. Default: past 7 days.
 
 Ask via `AskUserQuestion` with two options:
 
-1. "Use the defaults (at least 10,000 yuan in livestream sales in the
-   past 7 days)" — mark as "(Recommended)"
-2. "Set different thresholds"
+1. "Use the defaults (keep every influencer who livestream-sold the
+   product in the past 7 days — no minimum sales filter)" — mark as
+   "(Recommended)"
+2. "Set a minimum sales threshold"
 
 For option 2, ask in plain language:
 
 - "影响者过去多少天内卖了多少元，才算值得跟踪？" — collect a yuan
   amount and a day count.
 
-When writing the config, convert and write as:
+When writing the config:
 
-- `influencer.min_gmv` in units of 10k yuan (so 10,000 yuan → `1`)
-- `influencer.window_days` as integer days
+- `influencer.min_gmv` is stored in **plain yuan** (no unit conversion).
+  Default `1` means 1 yuan.
+- `influencer.window_days` is integer days.
 
-The user supplies plain yuan and plain days. The skill does the unit
-conversion silently. Never tell the user that `min_gmv` is in "wàn"
-or that the key name is `min_gmv` / `window_days`.
+Never tell the user the YAML key names. Speak only in yuan and days.
 
 ## Step 6 — write the config files
 

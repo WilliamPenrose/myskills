@@ -2,7 +2,7 @@
 //
 // Usage:
 //   node relevance.mjs score [--keyword <k>] [--out <json>]
-//   node relevance.mjs export [--filter pending|low_signal_kept|borderline|dropped|all] [--days N] [--out <xlsx>]
+//   node relevance.mjs export [--filter pending|low_signal_kept|low_signal_review|borderline|dropped|all] [--days N] [--out <xlsx>]
 //   node relevance.mjs import --in <xlsx> [--dry-run] [--no-archive]
 //   node relevance.mjs audit
 
@@ -174,11 +174,15 @@ async function runScore(args) {
 }
 
 const EXPORT_FILTERS = {
-  pending:         "decision_human IS NULL",
-  low_signal_kept: "decision_human IS NULL AND keyword_flag='low_signal' AND decision_auto='kept'",
-  borderline:      "decision_human IS NULL AND decision_auto='kept' AND score_v3 < 0.40",
-  dropped:         "decision_human IS NULL AND decision_auto='dropped'",
-  all:             "1=1",
+  pending:           "decision_human IS NULL",
+  low_signal_kept:   "decision_human IS NULL AND keyword_flag='low_signal' AND decision_auto='kept'",
+  // Re-review pass: all products in low_signal keywords, regardless of prior
+  // annotation. The xlsx pre-fills the "结果" column with the current
+  // effective decision, so import-time UPDATE will overwrite past calls.
+  low_signal_review: "keyword_flag='low_signal'",
+  borderline:        "decision_human IS NULL AND decision_auto='kept' AND score_v3 < 0.40",
+  dropped:           "decision_human IS NULL AND decision_auto='dropped'",
+  all:               "1=1",
 };
 
 function todayInShanghai() {
