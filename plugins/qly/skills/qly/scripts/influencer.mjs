@@ -272,8 +272,12 @@ async function runFetch(args) {
     } catch (err) {
       const msg = String(err?.message ?? err);
       let status = 'failed';
-      if (msg.includes('今日访问次数已达上限') || msg.includes('quota')) status = 'quota_hit';
-      else if (msg.includes('session') || msg.includes('未登录')) status = 'session_lost';
+      // extractInfluencerUids throws errors prefixed with QuotaExceeded: /
+      // SessionExpired: — match the prefix, not loose substrings (the old
+      // msg.includes('session') was case-sensitive and missed every
+      // SessionExpired: ... message, so the loop kept burning pids).
+      if (msg.startsWith('QuotaExceeded:')) status = 'quota_hit';
+      else if (msg.startsWith('SessionExpired:')) status = 'session_lost';
       try {
         insertRun.run(pid, filterTag, stamp, 0, status, msg.slice(0, 500));
       } catch { /* swallow run-insert errors after rollback */ }
