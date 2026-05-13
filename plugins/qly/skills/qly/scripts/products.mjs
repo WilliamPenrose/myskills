@@ -141,8 +141,10 @@ function upsertSightings(db, keyword, rows) {
     for (const r of rows) {
       const productUrl = r['商品链接'] ?? '';
       if (!productUrl) continue;
-      const productName = r['商品名'] ?? r['商品名称'] ?? '';
-      const shopName = r['店铺'] ?? r['店铺名'] ?? null;
+      // qlydata's actual headers are 商品名称 / 小店名称; the others are
+      // legacy aliases kept for forward-compat in case qly renames columns.
+      const productName = r['商品名称'] ?? r['商品名'] ?? '';
+      const shopName = r['小店名称'] ?? r['店铺'] ?? r['店铺名'] ?? null;
       const detailUrl = r['详情链接'] ?? r['qly_detail_url'] ?? '';
       const rawJson = JSON.stringify(r);
       const exists = checkExisting.get(keyword, productUrl);

@@ -227,7 +227,7 @@ async function runExport(args) {
       FROM relevance_annotations ra
       JOIN sightings s ON s.keyword = ra.keyword AND s.product_url = ra.product_url
       WHERE ${where}${extraWhere}
-      ORDER BY ra.keyword, ra.score_v3 ASC
+      ORDER BY ra.score_v3 ASC
     `;
     const rows = db.prepare(sql).all(...params);
     if (!rows.length) {
@@ -239,7 +239,10 @@ async function runExport(args) {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('annotations');
 
-    const headers = ['关键词', '商品链接', '商品名', '店铺', '自动判断', 'score_v3', '人工判断', '结果', '备注', 'keyword_flag'];
+    // Column order is optimized for review ergonomics: identifiers and auto
+    // context up front, editable cells (结果 / 备注) in the middle, the long
+    // URL last so it never pushes editable columns off-screen.
+    const headers = ['关键词', '商品名', '店铺', '自动判断', 'score_v3', '结果', '备注', 'keyword_flag', '商品链接'];
     const headerRow = ws.addRow(headers);
     headerRow.font = { name: '微软雅黑', size: 11, bold: true };
 
@@ -248,15 +251,14 @@ async function runExport(args) {
       const resultCell = effective === 'kept' ? '保留' : effective === 'dropped' ? '丢弃' : '';
       ws.addRow([
         r.keyword,
-        r.product_url,
         r.product_name,
         r.shop_name ?? '',
         r.decision_auto === 'kept' ? '保留' : '丢弃',
         Number(r.score_v3.toFixed(4)),
-        r.decision_human ? (r.decision_human === 'kept' ? '保留' : '丢弃') : '',
         resultCell,
         r.human_note ?? '',
         r.keyword_flag ?? '',
+        r.product_url,
       ]);
     }
 
@@ -270,11 +272,11 @@ async function runExport(args) {
       });
     });
     ws.columns.forEach((col, i) => {
-      const widths = [12, 60, 40, 20, 10, 10, 10, 10, 30, 14];
+      const widths = [12, 40, 20, 10, 10, 10, 30, 14, 60];
       col.width = widths[i] ?? 16;
     });
     ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: ws.rowCount, column: headers.length } };
-    ws.views = [{ state: 'frozen', xSplit: 4, ySplit: 1 }];
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
 
     await wb.xlsx.writeFile(outPath);
     console.error(`[export] wrote ${rows.length} rows to ${outPath}`);
