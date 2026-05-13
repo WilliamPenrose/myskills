@@ -30,7 +30,24 @@ import { redirectStderrToLog } from './_lib/log-redirect.mjs';
 
 const TARGET_HOST = 'qlydata.com';
 const GOODS_SEARCH_URL = 'https://qlydata.com/#/market_rank/goods/goods_search';
-const HASH_INVARIANT = '#/market_rank/goods/goods_search';
+const GOODS_SEARCH_HASH_PATH = '/market_rank/goods/goods_search';
+
+// True only if the URL's hash path is EXACTLY the goods_search route.
+// Substring match (e.g. .includes("#/market_rank/goods/goods_search")) is
+// wrong: goods_detail URLs are nested under it
+// (#/market_rank/goods/goods_search/goods_detail?pId=...) and would also
+// match — making the script think a detail tab is the search page and
+// then fail to find price/sales filter controls.
+function isOnGoodsSearchPage(url) {
+  try {
+    const hash = new URL(url).hash;
+    if (!hash.startsWith('#')) return false;
+    const hashPath = hash.slice(1).split('?')[0];
+    return hashPath === GOODS_SEARCH_HASH_PATH;
+  } catch {
+    return false;
+  }
+}
 
 function parseArgs(argv) {
   const out = {
@@ -150,8 +167,7 @@ async function ensureGoodsSearchTab(browser) {
   }
   if (!target) target = await browser.newPage();
   await target.bringToFront();
-  const u = target.url();
-  if (!u.includes(HASH_INVARIANT)) {
+  if (!isOnGoodsSearchPage(target.url())) {
     await target.goto(GOODS_SEARCH_URL, { waitUntil: 'domcontentloaded' });
   }
   return target;
@@ -265,6 +281,17 @@ async function main() {
     term(`\n[products] >>> ${k.key_word}`);
     try {
       try {
+        // Cheap pre-iteration gate: catch session loss (URL form) and
+        // page-drift away from the search page (e.g. previous action
+        // accidentally Vue-routed to detail, ad popup hijacked the tab).
+        // Without this we'd waste one full set-price/set-sales/search
+        // attempt before diagnoseAndRethrow figures out what happened.
+        await assertSession({ page });
+        if (!isOnGoodsSearchPage(page.url())) {
+          term(`[products] not on search page (url=${page.url()}) — re-navigating`);
+          await page.goto(GOODS_SEARCH_URL, { waitUntil: 'domcontentloaded' });
+          await assertSession({ page });
+        }
         requireSuccess(await setPriceRange(primitives, { min: price.min, max: price.max }), 'price', k.key_word);
         requireSuccess(await setLivestreamSales(primitives, { min: sales.min, max: sales.max }), 'sales', k.key_word);
         requireSuccess(await searchKeyword(primitives, { keyword: k.key_word }), 'search', k.key_word);
